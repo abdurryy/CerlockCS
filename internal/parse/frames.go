@@ -160,6 +160,7 @@ func (c *collector) onFrame() {
 		t.Side[f] = uint8(pl.Team)
 		t.Money[f] = uint16(clampInt(pl.Money(), 0, 65535))
 		t.Spotted[f] = spotted
+		t.Place[f] = c.place(propString(pawn, placeProp))
 		if !alive {
 			continue
 		}
@@ -212,6 +213,22 @@ func (c *collector) flags(pl *common.Player, pawn st.Entity, pf common.PlayerFla
 }
 
 var spottedProps = [2]string{"m_bSpottedByMask.0000", "m_bSpottedByMask.0001"}
+
+const placeProp = "m_szLastPlaceName"
+
+// place returns the index of a callout name in Match.Places.
+func (c *collector) place(name string) uint8 {
+	if i, ok := c.placeIdx[name]; ok {
+		return i
+	}
+	if len(c.m.Places) >= 255 {
+		return 0
+	}
+	i := uint8(len(c.m.Places))
+	c.placeIdx[name] = i
+	c.m.Places = append(c.m.Places, name)
+	return i
+}
 
 // spottedBy converts the game's spotted mask, which is indexed by entity
 // slot, into a mask indexed by replay player index.

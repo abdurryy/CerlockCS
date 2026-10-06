@@ -81,6 +81,9 @@ type Match struct {
 	BombEvents []BombEvent `json:"bombEvents"`
 
 	Weapons map[uint16]string `json:"weapons"`
+	// Places are the map's callout names, Track.Place indexes into it.
+	// Index 0 is the empty name.
+	Places []string `json:"places"`
 
 	Frames       Frames       `json:"-"`
 	Bomb         BombTrack    `json:"-"`
@@ -132,6 +135,9 @@ type RoundPlayer struct {
 	Money      int      `json:"money"`
 	EquipValue int      `json:"equipValue"`
 	Spent      int      `json:"spent"`
+	Armor      int      `json:"armor"`
+	Helmet     bool     `json:"helmet"`
+	Kit        bool     `json:"kit"`
 	Inventory  []uint16 `json:"inventory"`
 }
 
@@ -155,6 +161,15 @@ type Kill struct {
 	// VictimUtility lists the grenades the victim was still carrying.
 	VictimUtility []uint16 `json:"victimUtility"`
 	VictimBlind   bool     `json:"victimBlind"`
+	// VictimReloading is true when the victim died mid reload.
+	VictimReloading bool `json:"victimReloading"`
+	// Seen is how many enemies had the victim spotted when they died.
+	Seen        int     `json:"seen"`
+	KillerPlace string  `json:"killerPlace"`
+	VictimPlace string  `json:"victimPlace"`
+	Distance    float32 `json:"distance"`
+	// KillerSpeed is the killer's movement speed in units per second.
+	KillerSpeed float32 `json:"killerSpeed"`
 }
 
 type Damage struct {
@@ -214,6 +229,8 @@ type BombEvent struct {
 	Player int        `json:"player"`
 	Site   string     `json:"site"`
 	Pos    [3]float32 `json:"pos"`
+	// Kit is set on defuse_begin when the defuser has a kit.
+	Kit bool `json:"kit,omitempty"`
 }
 
 // Frames stores sampled player state. Each player owns a Track with one value
@@ -237,6 +254,7 @@ type Track struct {
 	Money   []uint16
 	Spotted []uint32
 	Side    []uint8
+	Place   []uint8
 }
 
 func (t *Track) Grow(n int) {
@@ -256,6 +274,7 @@ func (t *Track) Grow(n int) {
 		t.Money = append(t.Money, 0)
 		t.Spotted = append(t.Spotted, 0)
 		t.Side = append(t.Side, 0)
+		t.Place = append(t.Place, 0)
 	}
 }
 
@@ -283,6 +302,8 @@ type Shots struct {
 	Ticks  []int32
 	Player []uint8
 	Weapon []uint16
+	// Speed is the shooter's horizontal speed in units per second.
+	Speed []uint16
 }
 
 type GrenadePaths struct {

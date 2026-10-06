@@ -115,6 +115,38 @@ func (t *Tracker) Push(player int, s Sample) {
 	}
 }
 
+// Speed returns a player's horizontal speed in units per second, measured
+// over the last few ticks. Zero when there is not enough history.
+func (t *Tracker) Speed(player int) float32 {
+	if player < 0 || player >= len(t.hist) {
+		return 0
+	}
+	h := t.hist[player]
+	if h.n < 2 {
+		return 0
+	}
+	last := h.buf[(h.next-1+historySize)%historySize]
+	for i := 2; i <= h.n && i <= 16; i++ {
+		s := h.buf[(h.next-i+historySize)%historySize]
+		dt := last.Tick - s.Tick
+		if dt < 4 {
+			continue
+		}
+		if dt > 16 {
+			return 0
+		}
+		dx := float64(last.Eye[0] - s.Eye[0])
+		dy := float64(last.Eye[1] - s.Eye[1])
+		v := math.Hypot(dx, dy) / (float64(dt) / t.TickRate)
+		if v > 1000 {
+			// Respawn or teleport, not movement.
+			return 0
+		}
+		return float32(v)
+	}
+	return 0
+}
+
 func (t *Tracker) Shot(tick, player int) {
 	list := append(t.shots[player], tick)
 	// Only recent shots matter, drop anything older than the pre window.

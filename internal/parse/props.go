@@ -39,3 +39,11 @@ func propVec(e st.Entity, name string) r3.Vector {
 	}
 	return v.R3Vec()
 }
+
+func propString(e st.Entity, name string) string {
+	v, ok := e.PropertyValue(name)
+	if !ok || v.Any == nil {
+		return ""
+	}
+	return v.String()
+}

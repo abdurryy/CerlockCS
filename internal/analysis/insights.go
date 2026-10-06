@@ -234,6 +234,8 @@ func (a *analyzer) teamInsights(t int) {
 		})
 	}
 
+	a.areaInsights(t)
+
 	if rounds >= 8 && ts.UtilPerRound < 2 {
 		a.add(Insight{
 			ID: "team-util-usage", Severity: Low, Team: t, Player: -1,
@@ -491,7 +493,30 @@ func (a *analyzer) playerInsights(p int) {
 		a.add(in)
 	}
 
+	if st.ShotsFired >= 60 {
+		if lobby := a.lobbyCounterStrafe(); lobby > 0 && st.CounterStrafe < 55 && st.CounterStrafe < lobby-8 {
+			in := Insight{
+				ID: "player-moving-shots", Severity: Medium, Team: t, Player: p,
+				Title: "Shooting while moving",
+				Detail: fmt.Sprintf("Only %.0f%% of %s's shots were fired while slow enough to be accurate. The game average was %.0f%%.",
+					st.CounterStrafe, name, lobby),
+				Tip: "Tap the opposite movement key before shooting (counter strafe). Rifles are only accurate under about a third of full speed.",
+			}
+			for _, b := range a.r.Blunders {
+				if b.Player == p && b.Kind == "running_shots" {
+					in.Moments = append(in.Moments, Moment{Round: b.Round, Tick: b.Tick - int(a.rate), Player: p, Label: fmt.Sprintf("%s %s", rnd(b.Round), b.Detail)})
+				}
+			}
+			a.add(in)
+		}
+	}
+
 	// Things going well.
+	if st.Swing >= 6 {
+		a.add(Insight{ID: "player-swing", Severity: Positive, Team: t, Player: p,
+			Title:  "Won rounds for the team",
+			Detail: fmt.Sprintf("%s added %.1f%% round win chance per round on average through kills and plants.", name, st.Swing)})
+	}
 	if st.Rating >= 1.25 {
 		a.add(Insight{ID: "player-rating", Severity: Positive, Team: t, Player: p,
 			Title:  "Standout performance",
@@ -548,4 +573,51 @@ func (a *analyzer) worstUtilityHoarder(t int) int {
 		return -1
 	}
 	return best
+}
+
+// areaInsights finds callouts where a team keeps losing fights.
+func (a *analyzer) areaInsights(t int) {
+	m := a.m
+	var bad []AreaStats
+	for _, ar := range a.r.Areas {
+		if ar.Team == t && ar.Deaths >= 4 && ar.Deaths >= 2*ar.Kills+2 {
+			bad = append(bad, ar)
+		}
+	}
+	sort.Slice(bad, func(i, j int) bool { return bad[i].Deaths-bad[i].Kills > bad[j].Deaths-bad[j].Kills })
+	if len(bad) > 2 {
+		bad = bad[:2]
+	}
+	for _, ar := range bad {
+		in := Insight{
+			ID: "team-area-" + ar.Place + "-" + ar.Side, Severity: Medium, Team: t, Player: -1,
+			Title: fmt.Sprintf("Losing fights at %s", ar.Name),
+			Detail: fmt.Sprintf("On the %s side %s won %d and lost %d fights at %s.",
+				ar.Side, m.Teams[t].Name, ar.Kills, ar.Deaths, ar.Name),
+			Tip: "Look at how these fights start. Same angle, same timing or no utility usually means the other team has read it.",
+		}
+		for i, k := range m.Kills {
+			if k.VictimPlace == ar.Place && a.teamOf(k.Victim) == t && k.VictimSide.String() == ar.Side && k.Killer >= 0 && a.enemies(k.Killer, k.Victim) {
+				in.Moments = append(in.Moments, a.killMoment(i, fmt.Sprintf("%s %s died to %s", rnd(k.Round), a.name(k.Victim), a.name(k.Killer))))
+			}
+		}
+		a.add(in)
+	}
+}
+
+func (a *analyzer) lobbyCounterStrafe() float64 {
+	var v []float64
+	for _, st := range a.r.Players {
+		if st.ShotsFired >= 30 {
+			v = append(v, st.CounterStrafe)
+		}
+	}
+	if len(v) == 0 {
+		return -1
+	}
+	sum := 0.0
+	for _, x := range v {
+		sum += x
+	}
+	return round1(sum / float64(len(v)))
 }

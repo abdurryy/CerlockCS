@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/abdurryy/CerlockCS/internal/pipeline"
+	"github.com/abdurryy/CerlockCS/internal/replay"
 )
 
 // Entry describes a parsed demo in the library.
@@ -31,6 +32,7 @@ type Entry struct {
 	ParseMs  int64            `json:"parseMs"`
 	Replay   int64            `json:"replaySize"`
 	Created  time.Time        `json:"created"`
+	Format   int              `json:"format"`
 }
 
 // Job is a parse that is running or queued.
@@ -78,6 +80,12 @@ func OpenLibrary(dir string, workers, sampleInterval int) (*Library, error) {
 		}
 		var e Entry
 		if json.Unmarshal(b, &e) != nil || e.ID == "" {
+			continue
+		}
+		if e.Format != replay.Version {
+			// Made by an older version, parse it again when it is needed.
+			os.Remove(f)
+			os.Remove(l.replayPath(e.ID))
 			continue
 		}
 		if _, err := os.Stat(l.replayPath(e.ID)); err != nil {
@@ -210,6 +218,7 @@ func (l *Library) Process(job *Job, r io.Reader, size int64) (*Entry, error) {
 		ParseMs:  sum.ParseMs,
 		Replay:   st.Size(),
 		Created:  time.Now().UTC(),
+		Format:   replay.Version,
 	}
 	b, _ := json.MarshalIndent(e, "", "  ")
 	if err := os.WriteFile(filepath.Join(l.dir, e.ID+".json"), b, 0o644); err != nil {

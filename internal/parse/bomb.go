@@ -35,7 +35,12 @@ func (c *collector) registerBomb() {
 		c.bombState = match.BombPlanted
 		add("planted", e.Player, e.Site)
 	})
-	p.RegisterEventHandler(func(e events.BombDefuseStart) { add("defuse_begin", e.Player, events.BomsiteUnknown) })
+	p.RegisterEventHandler(func(e events.BombDefuseStart) {
+		add("defuse_begin", e.Player, events.BomsiteUnknown)
+		if e.HasKit && c.live() && len(c.m.BombEvents) > 0 {
+			c.m.BombEvents[len(c.m.BombEvents)-1].Kit = true
+		}
+	})
 	p.RegisterEventHandler(func(e events.BombDefuseAborted) { add("defuse_abort", e.Player, events.BomsiteUnknown) })
 	p.RegisterEventHandler(func(e events.BombDefused) {
 		c.bombState = match.BombDefused

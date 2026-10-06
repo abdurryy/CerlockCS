@@ -99,6 +99,7 @@ type collector struct {
 
 	players    map[string]int
 	byPtr      map[*common.Player]int
+	placeIdx   map[string]uint8
 	slotPlayer [128]int
 	lastUtil   [][]uint16
 	lastSample int
@@ -130,7 +131,9 @@ func (c *collector) reset() {
 	c.m = &match.Match{
 		SampleInterval: c.opts.SampleInterval,
 		Weapons:        map[uint16]string{},
+		Places:         []string{""},
 	}
+	c.placeIdx = map[string]uint8{"": 0}
 	c.players = map[string]int{}
 	c.byPtr = map[*common.Player]int{}
 	c.lastUtil = nil

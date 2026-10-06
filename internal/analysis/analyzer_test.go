@@ -95,3 +95,34 @@ func TestBuyType(t *testing.T) {
 		t.Error("pistol round not detected")
 	}
 }
+
+func TestPrettyPlace(t *testing.T) {
+	cases := map[string]string{
+		"BombsiteA": "Bombsite A",
+		"CTSpawn":   "CT Spawn",
+		"TSpawn":    "T Spawn",
+		"TopofMid":  "Top of Mid",
+		"HutRoof":   "Hut Roof",
+		"Ramp":      "Ramp",
+	}
+	for in, want := range cases {
+		if got := prettyPlace(in); got != want {
+			t.Errorf("prettyPlace(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestWinChance(t *testing.T) {
+	if p := winChance(5, 5, 3, false); p != 0.5 {
+		t.Fatalf("5v5 = %v", p)
+	}
+	if p := winChance(5, 4, 3, false); p < 0.65 || p > 0.8 {
+		t.Fatalf("5v4 = %v", p)
+	}
+	if winChance(1, 1, 2, true) <= winChance(1, 1, 2, false) {
+		t.Fatal("a plant should help T")
+	}
+	if winChance(0, 3, 2, false) != 0 || winChance(2, 0, 2, false) != 1 {
+		t.Fatal("dead teams should be decided")
+	}
+}

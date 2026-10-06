@@ -45,6 +45,12 @@ func (c *collector) registerCombat() {
 			VictimPos:     v3(e.Victim.Position()),
 			VictimUtility: c.lastUtil[victim],
 			VictimBlind:   e.Victim.IsBlinded(),
+			Distance:      e.Distance,
+		}
+		if pawn := e.Victim.PlayerPawnEntity(); pawn != nil {
+			k.VictimPlace = propString(pawn, placeProp)
+			k.VictimReloading = e.Victim.IsReloading
+			k.Seen = c.enemiesSeeing(e.Victim, c.spottedBy(pawn))
 		}
 		var killerWeapon common.EquipmentType
 		if e.Weapon != nil {
@@ -54,6 +60,12 @@ func (c *collector) registerCombat() {
 		if e.Killer != nil {
 			k.KillerSide = match.Side(e.Killer.Team)
 			k.KillerPos = v3(e.Killer.Position())
+			if pawn := e.Killer.PlayerPawnEntity(); pawn != nil {
+				k.KillerPlace = propString(pawn, placeProp)
+			}
+			if c.aim != nil && k.Killer >= 0 {
+				k.KillerSpeed = c.aim.Speed(k.Killer)
+			}
 		}
 		c.m.Kills = append(c.m.Kills, k)
 
@@ -114,6 +126,11 @@ func (c *collector) registerCombat() {
 		s.Ticks = append(s.Ticks, int32(tick))
 		s.Player = append(s.Player, uint8(shooter))
 		s.Weapon = append(s.Weapon, c.weapon(e.Weapon.Type))
+		var speed float32
+		if c.aim != nil {
+			speed = c.aim.Speed(shooter)
+		}
+		s.Speed = append(s.Speed, uint16(speed))
 		if c.aim != nil && isGun(e.Weapon.Type) {
 			c.aim.Shot(tick, shooter)
 		}
@@ -145,4 +162,19 @@ func (c *collector) registerCombat() {
 		}
 		c.m.Blinds = append(c.m.Blinds, b)
 	})
+}
+
+// enemiesSeeing counts how many players on the other team have spotted pl,
+// given pl's spotted mask in replay indexes.
+func (c *collector) enemiesSeeing(pl *common.Player, mask uint32) int {
+	n := 0
+	for _, other := range c.p.GameState().Participants().Playing() {
+		if other.Team == pl.Team || !other.IsAlive() {
+			continue
+		}
+		if idx := c.index(other); idx >= 0 && idx < 32 && mask&(1<<uint(idx)) != 0 {
+			n++
+		}
+	}
+	return n
 }

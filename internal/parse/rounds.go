@@ -141,6 +141,9 @@ func (c *collector) captureEconomy(r *match.Round) {
 			Money:      pl.Money(),
 			EquipValue: pl.EquipmentValueCurrent(),
 			Spent:      pl.MoneySpentThisRound(),
+			Armor:      pl.Armor(),
+			Helmet:     pl.HasHelmet(),
+			Kit:        pl.HasDefuseKit(),
 		}
 		for _, w := range pl.Inventory {
 			if w != nil && w.Type != common.EqKnife {

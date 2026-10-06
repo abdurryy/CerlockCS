@@ -49,6 +49,10 @@ type analyzer struct {
 	// traded[k] is true when the death in kill k was avenged in time.
 	traded    map[int]bool
 	tradeKill map[int]bool
+	// tradeTime[j] is how many seconds trade kill j came after the death it
+	// avenged.
+	tradeTime  map[int]float64
+	plantSwing map[int]float64
 	// mateDist[k] is the distance from the victim to the closest living
 	// teammate, -1 when nobody was alive.
 	mateDist map[int]float64
@@ -65,6 +69,7 @@ func newAnalyzer(m *match.Match) *analyzer {
 		rate:      m.TickRate,
 		traded:    map[int]bool{},
 		tradeKill: map[int]bool{},
+		tradeTime: map[int]float64{},
 		mateDist:  map[int]float64{},
 		pistols:   map[int]bool{},
 		plantRnd:  map[int]string{},
@@ -183,6 +188,7 @@ func (a *analyzer) rounds() {
 				if later.Victim == kl.Killer && later.Killer >= 0 && a.teamOf(later.Killer) == a.teamOf(kl.Victim) {
 					a.traded[k] = true
 					a.tradeKill[j] = true
+					a.tradeTime[j] = a.seconds(later.Tick - kl.Tick)
 					info.Traded = append(info.Traded, k)
 					break
 				}
@@ -415,12 +421,16 @@ func (a *analyzer) players() {
 	}
 
 	for p := range stats {
-		st := &stats[p]
 		for ri := range m.Rounds {
 			if _, ok := a.sides[ri][p]; ok && !died[[2]int{ri, p}] {
 				kast[p][ri] = true
 			}
 		}
+	}
+	a.playerExtras(stats, kast)
+
+	for p := range stats {
+		st := &stats[p]
 		for _, n := range roundKills[p] {
 			if n >= 2 {
 				st.MultiKills[n]++

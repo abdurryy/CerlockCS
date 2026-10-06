@@ -81,3 +81,17 @@ func TestEngagementMetrics(t *testing.T) {
 		t.Errorf("samples cover %d ticks ending at %v", e.SampleLen, samples.Ticks)
 	}
 }
+
+func TestSpeed(t *testing.T) {
+	tr := NewTracker(64)
+	// 250 units per second along x.
+	for tick := int32(0); tick < 10; tick++ {
+		tr.Push(0, Sample{Tick: tick, Eye: [3]float32{float32(tick) * 250 / 64, 0, 64}, Alive: true})
+	}
+	if v := tr.Speed(0); math.Abs(float64(v)-250) > 0.5 {
+		t.Fatalf("speed = %v, want 250", v)
+	}
+	if tr.Speed(5) != 0 {
+		t.Fatal("unknown player should have no speed")
+	}
+}

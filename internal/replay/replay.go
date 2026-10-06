@@ -25,8 +25,10 @@ import (
 )
 
 const (
-	Magic   = "CRLK"
-	Version = 1
+	Magic = "CRLK"
+	// Version is bumped whenever the columns or analysis change in a way
+	// older viewers or replays cannot handle.
+	Version = 2
 )
 
 type Column struct {
@@ -116,6 +118,7 @@ func columns(m *match.Match) []column {
 	add("player.money", "u16", catU16(func(t *match.Track) []uint16 { return t.Money }), n)
 	add("player.spotted", "u32", catU32(func(t *match.Track) []uint32 { return t.Spotted }), n)
 	add("player.side", "u8", catU8(func(t *match.Track) []uint8 { return t.Side }), n)
+	add("player.place", "u8", catU8(func(t *match.Track) []uint8 { return t.Place }), n)
 
 	b := &m.Bomb
 	add("bomb.x", "i16", b.X, len(b.X))
@@ -127,6 +130,7 @@ func columns(m *match.Match) []column {
 	add("shot.tick", "i32", s.Ticks, len(s.Ticks))
 	add("shot.player", "u8", s.Player, len(s.Player))
 	add("shot.weapon", "u16", s.Weapon, len(s.Weapon))
+	add("shot.speed", "u16", s.Speed, len(s.Speed))
 
 	g := &m.GrenadePaths
 	add("nade.x", "i16", g.X, len(g.X))
