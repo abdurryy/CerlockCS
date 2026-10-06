@@ -10,6 +10,27 @@ export interface Layer {
   // no image is available.
   image: CanvasImageSource | null
   generated: boolean
+  // plate is the image colour graded and lifted with a shadow, PLATE_PAD
+  // pixels bigger on every side.
+  plate: HTMLCanvasElement | null
+}
+
+export const PLATE_PAD = 64
+
+// Callout is a map area name placed where players stood while in it.
+export interface Callout {
+  name: string
+  x: number
+  y: number
+  level: number
+  weight: number
+}
+
+export interface Site {
+  name: string
+  x: number
+  y: number
+  level: number
 }
 
 // MapView converts world coordinates to radar pixels. Radar space is always
@@ -24,6 +45,8 @@ export class MapView {
   readonly known: boolean
   // bounds is the part of the radar players actually used, in radar pixels.
   bounds: [number, number, number, number] = [0, 0, 1024, 1024]
+  callouts: Callout[] = []
+  sites: Site[] = []
 
   private constructor(info: MapInfo, layers: Layer[]) {
     this.name = info.name
@@ -45,7 +68,7 @@ export class MapView {
       }
     }
     const layers: Layer[] = await Promise.all(
-      info.levels.map(async (level) => ({ level, image: await loadImage(level.image), generated: false })),
+      info.levels.map(async (level) => ({ level, image: await loadImage(level.image), generated: false, plate: null })),
     )
     const view = new MapView(info, layers)
     if (!info.known) view.fitToPlayers(replay)
@@ -55,7 +78,10 @@ export class MapView {
         layer.image = view.floorPlan(replay, layer.level)
         layer.generated = true
       }
+      layer.plate = makePlate(layer.image, layer.generated)
     }
+    view.findCallouts(replay)
+    view.findSites(replay)
     return view
   }
 
@@ -103,6 +129,60 @@ export class MapView {
     if (!isFinite(x0) || x1 - x0 < 50 || y1 - y0 < 50) return [0, 0, SIZE, SIZE]
     const pad = 40
     return [x0 - pad, y0 - pad, x1 + pad, y1 + pad]
+  }
+
+  // findCallouts places every area name at the middle of where players
+  // stood while the game said they were there.
+  private findCallouts(r: Replay) {
+    if (!r.pplace.length) return
+    const F = r.frames
+    const acc = new Map<string, { x: number; y: number; n: number }>()
+    for (let p = 0; p < r.players; p++) {
+      for (let f = 0; f < F; f += 6) {
+        const i = p * F + f
+        const place = r.pplace[i]
+        if (!place || !(r.pflags[i] & FLAG.alive)) continue
+        const level = this.levelOf(r.pz[i])
+        const key = `${place}|${level}`
+        const a = acc.get(key) ?? { x: 0, y: 0, n: 0 }
+        a.x += r.px[i]
+        a.y += r.py[i]
+        a.n++
+        acc.set(key, a)
+      }
+    }
+    const out: Callout[] = []
+    for (const [key, a] of acc) {
+      if (a.n < 12) continue
+      const [place, level] = key.split('|').map(Number)
+      const name = r.placeName(place)
+      if (!name || /spawn/i.test(name)) continue
+      const [x, y] = this.toRadar(a.x / a.n, a.y / a.n)
+      out.push({ name, x, y, level, weight: a.n })
+    }
+    // Busy areas first so they win when labels overlap.
+    this.callouts = out.sort((a, b) => b.weight - a.weight)
+  }
+
+  // findSites marks bombsites where the bomb was actually planted, or where
+  // the game says the site is when nobody planted there.
+  private findSites(r: Replay) {
+    const acc = new Map<string, { x: number; y: number; level: number; n: number }>()
+    for (const b of r.match.bombEvents ?? []) {
+      if (b.kind !== 'planted' || !b.site) continue
+      const [x, y] = this.toRadar(b.pos[0], b.pos[1])
+      const a = acc.get(b.site) ?? { x: 0, y: 0, level: this.levelOf(b.pos[2]), n: 0 }
+      a.x += x
+      a.y += y
+      a.n++
+      acc.set(b.site, a)
+    }
+    for (const c of this.callouts) {
+      const m = /^Bombsite ([AB])$/.exec(c.name)
+      if (m && !acc.has(m[1])) acc.set(m[1], { x: c.x, y: c.y, level: c.level, n: 1 })
+    }
+    this.sites = [...acc].map(([name, a]) => ({ name, x: a.x / a.n, y: a.y / a.n, level: a.level }))
+    this.callouts = this.callouts.filter((c) => !/^Bombsite [AB]$/.test(c.name))
   }
 
   // fitToPlayers is used for maps without overview data: centre the radar
@@ -213,4 +293,33 @@ async function loadImage(src: string): Promise<HTMLImageElement | null> {
   } catch {
     return null
   }
+}
+
+// makePlate colour grades the radar to sit in the palette and gives it a
+// soft shadow so it reads as a sheet lying on the desk.
+function makePlate(image: CanvasImageSource, generated: boolean): HTMLCanvasElement {
+  const graded = document.createElement('canvas')
+  graded.width = SIZE
+  graded.height = SIZE
+  const g = graded.getContext('2d')!
+  if (!generated) g.filter = 'saturate(0.72) contrast(1.06) brightness(0.9) sepia(0.14)'
+  g.drawImage(image, 0, 0, SIZE, SIZE)
+
+  const plate = document.createElement('canvas')
+  plate.width = SIZE + PLATE_PAD * 2
+  plate.height = SIZE + PLATE_PAD * 2
+  const ctx = plate.getContext('2d')!
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.75)'
+  ctx.shadowBlur = 30
+  ctx.shadowOffsetY = 8
+  ctx.drawImage(graded, PLATE_PAD, PLATE_PAD)
+  ctx.shadowColor = 'transparent'
+  // A faint warm rim light on the top edges.
+  ctx.globalCompositeOperation = 'source-atop'
+  const rim = ctx.createLinearGradient(0, 0, 0, plate.height)
+  rim.addColorStop(0, 'rgba(255, 236, 200, 0.06)')
+  rim.addColorStop(1, 'rgba(0, 0, 0, 0.12)')
+  ctx.fillStyle = rim
+  ctx.fillRect(0, 0, plate.width, plate.height)
+  return plate
 }

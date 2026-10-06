@@ -1,6 +1,7 @@
 import type {
   BombEvent,
   Blind,
+  Blunder,
   Column,
   Damage,
   Engagement,
@@ -55,14 +56,25 @@ export interface PlayerState {
   money: number
   spotted: number
   side: number
+  place: number
   alive: boolean
   present: boolean
+}
+
+// prettyPlace turns callout names like "BombsiteA" or "TopofMid" into
+// "Bombsite A" and "Top of Mid", same as the Go side.
+export function prettyPlace(s: string): string {
+  return s
+    .replace(/([a-z])of([A-Z])/g, '$1 of $2')
+    .replace(/([a-z])([A-Z0-9])/g, '$1 $2')
+    .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2')
+    .trim()
 }
 
 export function emptyState(): PlayerState {
   return {
     x: 0, y: 0, z: 0, yaw: 0, pitch: 0, hp: 0, armor: 0, flags: 0, weapon: 0, primary: 0,
-    util: 0, flash: 0, money: 0, spotted: 0, side: 0, alive: false, present: false,
+    util: 0, flash: 0, money: 0, spotted: 0, side: 0, place: 0, alive: false, present: false,
   }
 }
 
@@ -120,9 +132,10 @@ export class Replay {
   readonly pmoney: Uint16Array
   readonly pspotted: Uint32Array
   readonly pside: Uint8Array
+  readonly pplace: Uint8Array
 
   readonly bomb: { x: Int16Array; y: Int16Array; z: Int16Array; state: Uint8Array }
-  readonly shots: { tick: Int32Array; player: Uint8Array; weapon: Uint16Array }
+  readonly shots: { tick: Int32Array; player: Uint8Array; weapon: Uint16Array; speed: Uint16Array }
   readonly nade: { x: Int16Array; y: Int16Array; z: Int16Array; tick: Int32Array }
   readonly aim: { tick: Int32Array; yaw: Float32Array; pitch: Float32Array; error: Float32Array; visible: Uint8Array }
 
@@ -134,6 +147,9 @@ export class Replay {
   readonly roundBomb: BombEvent[][]
   readonly roundDamages: Damage[][]
   readonly engagements: Engagement[]
+  readonly blunders: Blunder[]
+  readonly roundBlunders: Blunder[][]
+  readonly places: string[]
   // slot[p] is the 1 based position of a player in their team list.
   readonly slot: number[]
   readonly teamPlayers: [number[], number[]]
@@ -143,7 +159,7 @@ export class Replay {
     const magic = new TextDecoder().decode(new Uint8Array(buf, 0, 4))
     if (magic !== 'CRLK') throw new Error('not a CerlockCS replay')
     const version = dv.getUint32(4, true)
-    if (version !== 1) throw new Error(`unsupported replay version ${version}`)
+    if (version !== 2) throw new Error(`this replay was made by another version (${version}), parse the demo again`)
     const len = dv.getUint32(8, true)
     this.header = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 12, len))) as Header
     this.match = this.header.match
@@ -170,6 +186,7 @@ export class Replay {
     this.pmoney = view(buf, c['player.money']) as Uint16Array
     this.pspotted = view(buf, c['player.spotted']) as Uint32Array
     this.pside = view(buf, c['player.side']) as Uint8Array
+    this.pplace = view(buf, c['player.place']) as Uint8Array
     this.bomb = {
       x: view(buf, c['bomb.x']) as Int16Array,
       y: view(buf, c['bomb.y']) as Int16Array,
@@ -180,6 +197,7 @@ export class Replay {
       tick: view(buf, c['shot.tick']) as Int32Array,
       player: view(buf, c['shot.player']) as Uint8Array,
       weapon: view(buf, c['shot.weapon']) as Uint16Array,
+      speed: view(buf, c['shot.speed']) as Uint16Array,
     }
     this.nade = {
       x: view(buf, c['nade.x']) as Int16Array,
@@ -204,6 +222,9 @@ export class Replay {
     this.roundBomb = groupByRound(this.match.bombEvents, n)
     this.roundDamages = groupByRound(this.match.damages, n)
     this.engagements = this.match.engagements ?? []
+    this.blunders = this.report.blunders ?? []
+    this.roundBlunders = groupByRound(this.blunders, n)
+    this.places = this.match.places ?? ['']
 
     this.teamPlayers = [[], []]
     for (const p of this.match.players) {
@@ -265,6 +286,7 @@ export class Replay {
     out.util = this.putil[i]
     out.money = this.pmoney[i]
     out.spotted = this.pspotted[i]
+    out.place = this.pplace.length ? this.pplace[i] : 0
     out.flash = this.pflash[i] / 40
     out.pitch = this.ppitch[i] / 100
 
@@ -329,6 +351,10 @@ export class Replay {
     const t1 = tt[i + 1]
     const t = t1 > t0 ? (tick - t0) / (t1 - t0) : 0
     return [x[i] + (x[i + 1] - x[i]) * t, y[i] + (y[i + 1] - y[i]) * t, z[i] + (z[i + 1] - z[i]) * t]
+  }
+
+  placeName(i: number): string {
+    return prettyPlace(this.places[i] ?? '')
   }
 
   playerName(p: number): string {

@@ -10,11 +10,11 @@
   const info = $derived.by(() => {
     const tick = v.tick
     const round = r.roundIndex(tick)
-    const alive = [0, 0]
+    const alive: boolean[][] = [[], []]
     for (let t = 0; t < 2; t++) {
       for (const p of r.teamPlayers[t]) {
         r.state(p, tick, s)
-        if (s.present && s.alive) alive[t]++
+        if (s.present) alive[t].push(s.alive)
       }
     }
     return {
@@ -27,100 +27,130 @@
   })
 
   const cls = (side: number) => (side === 3 ? 'ct' : 't')
+  const phase = $derived(
+    info.clock.phase === 'freeze' ? 'freeze time' : info.clock.phase === 'planted' ? 'bomb planted' : info.clock.phase === 'over' ? 'round over' : 'live',
+  )
 </script>
 
 <div class="hud">
-  <div class="team left {cls(info.sides[0])}">
-    <span class="name">{r.teamName(0)}</span>
-    <span class="alive" title="Players alive">{info.alive[0]}</span>
-  </div>
-  <div class="score {cls(info.sides[0])}">{info.score[0]}</div>
-  <div class="clock" class:planted={info.clock.phase === 'planted'} class:freeze={info.clock.phase === 'freeze'}>
-    <span class="time mono">{info.clock.text}</span>
-    <span class="round">Round {info.round + 1}{info.clock.phase === 'freeze' ? ' · freeze time' : ''}{info.clock.phase === 'planted' ? ' · bomb planted' : ''}</span>
-  </div>
-  <div class="score {cls(info.sides[1])}">{info.score[1]}</div>
-  <div class="team right {cls(info.sides[1])}">
-    <span class="alive" title="Players alive">{info.alive[1]}</span>
-    <span class="name">{r.teamName(1)}</span>
-  </div>
+  {#each [0, 1] as t (t)}
+    <div class="team {t === 0 ? 'left' : 'right'} {cls(info.sides[t])}">
+      <span class="name">{r.teamName(t)}</span>
+      <span class="pips" title="Players alive">
+        {#each info.alive[t] as a, i (i)}<i class:dead={!a}></i>{/each}
+      </span>
+      <span class="score mono">{info.score[t]}</span>
+    </div>
+    {#if t === 0}
+      <div class="clock" class:planted={info.clock.phase === 'planted'}>
+        <span class="time mono">{info.clock.text}</span>
+        <span class="label">Round {info.round + 1} · {phase}</span>
+      </div>
+    {/if}
+  {/each}
 </div>
 
 <style>
   .hud {
     position: absolute;
-    top: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    align-items: stretch;
-    gap: 2px;
-    pointer-events: none;
-    font-weight: 600;
-    filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.5));
-  }
-
-  .team,
-  .score,
-  .clock {
-    background: rgba(13, 17, 23, 0.88);
-    display: flex;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    padding: 0 10px;
+    padding: 12px 18px 26px;
+    pointer-events: none;
+    background: linear-gradient(to bottom, rgba(14, 16, 19, 0.97), rgba(14, 16, 19, 0.88) 60%, rgba(14, 16, 19, 0));
   }
 
   .team {
-    gap: 8px;
-    max-width: 200px;
-    border-radius: 8px 0 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .team.left {
+    justify-content: flex-end;
   }
 
   .team.right {
-    border-radius: 0 8px 8px 0;
+    flex-direction: row-reverse;
+    justify-content: flex-end;
   }
 
   .name {
+    font-family: var(--serif);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--paper);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--text);
-  }
-
-  .alive {
-    font-size: 15px;
-    min-width: 12px;
-    text-align: center;
   }
 
   .score {
-    font-size: 20px;
-    min-width: 40px;
-    justify-content: center;
+    font-size: 26px;
+    font-weight: 600;
+    line-height: 1;
+    min-width: 32px;
+    text-align: center;
+  }
+
+  .ct .score {
+    color: var(--ct);
+  }
+
+  .t .score {
+    color: var(--t);
+  }
+
+  .pips {
+    display: flex;
+    gap: 3px;
+  }
+
+  .pips i {
+    width: 4px;
+    height: 14px;
+    border-radius: 1px;
+    background: currentColor;
+  }
+
+  .ct .pips {
+    color: var(--ct);
+  }
+
+  .t .pips {
+    color: var(--t);
+  }
+
+  .pips i.dead {
+    background: var(--rule-2);
   }
 
   .clock {
+    display: flex;
     flex-direction: column;
-    padding: 4px 14px;
-    min-width: 120px;
+    align-items: center;
+    padding: 0 26px;
+    border-left: 1px solid var(--rule-2);
+    border-right: 1px solid var(--rule-2);
+    margin: 0 18px;
   }
 
   .time {
-    font-size: 20px;
+    font-size: 24px;
+    font-weight: 500;
     line-height: 1.1;
   }
 
-  .round {
-    font-size: 11px;
-    color: var(--muted);
-    font-weight: 500;
-    white-space: nowrap;
-  }
-
   .clock.planted .time {
-    color: var(--bad);
+    color: var(--marker);
   }
 
-  .clock.freeze .time {
-    color: var(--text-2);
+  .label {
+    white-space: nowrap;
   }
 </style>

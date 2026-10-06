@@ -24,6 +24,9 @@ export interface RoundPlayer {
   money: number
   equipValue: number
   spent: number
+  armor: number
+  helmet: boolean
+  kit: boolean
   inventory: number[] | null
 }
 
@@ -65,6 +68,12 @@ export interface Kill {
   victimPos: Vec3
   victimUtility: number[] | null
   victimBlind: boolean
+  victimReloading: boolean
+  seen: number
+  killerPlace: string
+  victimPlace: string
+  distance: number
+  killerSpeed: number
 }
 
 export interface Damage {
@@ -123,6 +132,7 @@ export interface BombEvent {
   player: number
   site: string
   pos: Vec3
+  kit?: boolean
 }
 
 export interface Engagement {
@@ -169,6 +179,7 @@ export interface Match {
   infernos: Inferno[] | null
   bombEvents: BombEvent[] | null
   weapons: Record<string, string>
+  places: string[] | null
   engagements: Engagement[] | null
 }
 
@@ -216,6 +227,33 @@ export interface PlayerStats {
   shotsFired: number
   shotsHit: number
   accuracy: number
+  sides: Record<string, SideStats>
+  swing: number
+  kpr: number
+  dpr: number
+  counterStrafe: number
+  runningShots: number
+  avgKillDistance: number
+  timeAlive: number
+  travel: number
+  weaponKills: Record<string, number>
+  heDamagePerNade: number
+  fireDamagePerNade: number
+  blindPerFlash: number
+  avgTradeTime: number
+  blunders: number
+  blunderCost: number
+  killPlaces: Record<string, number>
+  deathPlaces: Record<string, number>
+}
+
+export interface SideStats {
+  rounds: number
+  kills: number
+  deaths: number
+  damage: number
+  adr: number
+  kast: number
 }
 
 export interface TeamStats {
@@ -260,6 +298,49 @@ export interface RoundInfo {
   planted: boolean
   site: string
   firstContact: number
+  winProb: WinPoint[] | null
+  story: StoryLine[] | null
+  setup: [string, string]
+  hit: string
+  hitTime: number
+}
+
+export interface WinPoint {
+  tick: number
+  p: number
+}
+
+export interface StoryLine {
+  tick: number
+  kind: string
+  text: string
+  player: number
+}
+
+export interface Blunder {
+  kind: string
+  severity: Severity
+  round: number
+  tick: number
+  player: number
+  other: number
+  team: number
+  title: string
+  detail: string
+  pos: Vec3
+  cost: number
+}
+
+export interface AreaStats {
+  place: string
+  name: string
+  team: number
+  side: string
+  kills: number
+  deaths: number
+  openingKills: number
+  openingDeaths: number
+  time: number
 }
 
 export type Severity = 'high' | 'medium' | 'low' | 'positive'
@@ -304,6 +385,9 @@ export interface Report {
   rounds: RoundInfo[]
   insights: Insight[]
   aim: AimSummary[]
+  blunders: Blunder[] | null
+  areas: AreaStats[] | null
+  killSwing: number[] | null
   tradeWindow: number
 }
 
@@ -350,6 +434,7 @@ export interface Entry {
   parseMs: number
   replaySize: number
   created: string
+  format: number
 }
 
 export interface Job {

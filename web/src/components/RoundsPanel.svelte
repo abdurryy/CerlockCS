@@ -1,18 +1,16 @@
 <script lang="ts">
   import { clock, money } from '../lib/format'
-  import type { BombEvent, Kill } from '../lib/types'
   import type { Viewer } from '../lib/viewer.svelte'
-  import { REASON, weaponName } from '../lib/weapons'
+  import { REASON } from '../lib/weapons'
 
   let { v }: { v: Viewer } = $props()
   const r = $derived(v.replay)
   const rounds = $derived(r.match.rounds)
   const info = $derived(r.report.rounds)
-
   const current = $derived(v.round)
 
-  // Time on the round clock when something happened. After the plant the
-  // clock shows the bomb timer instead.
+  // What the in game clock showed at a tick. After the plant it shows the
+  // bomb timer instead.
   function at(round: number, tick: number): { text: string; bomb: boolean } {
     const rd = rounds[round]
     const plant = r.roundBomb[round].find((e) => e.kind === 'planted')
@@ -21,20 +19,6 @@
   }
 
   const cls = (side: number) => (side === 3 ? 'ct' : 't')
-
-  // Kills and bomb plants/defuses of a round in the order they happened.
-  function events(round: number): { tick: number; kill?: Kill; bomb?: BombEvent; traded?: boolean }[] {
-    const traded = new Set(info[round].traded ?? [])
-    const list: { tick: number; kill?: Kill; bomb?: BombEvent; traded?: boolean }[] = r.roundKills[round].map((k) => ({
-      tick: k.tick,
-      kill: k,
-      traded: traded.has(r.kills.indexOf(k)),
-    }))
-    for (const b of r.roundBomb[round]) {
-      if (b.kind === 'planted' || b.kind === 'defused') list.push({ tick: b.tick, bomb: b })
-    }
-    return list.sort((a, b) => a.tick - b.tick)
-  }
 </script>
 
 <div class="rounds">
@@ -42,41 +26,39 @@
     {@const ri = info[i]}
     <section class:current={i === current}>
       <button class="head" onclick={() => v.seekRound(i)}>
-        <span class="num">{i + 1}</span>
+        <span class="num mono">{String(i + 1).padStart(2, '0')}</span>
         <span class="winner {cls(rd.winner)}">{rd.winnerTeam >= 0 ? r.teamName(rd.winnerTeam) : '-'}</span>
-        <span class="reason muted">{REASON[rd.reason] ?? rd.reason}</span>
+        <span class="reason">{REASON[rd.reason] ?? rd.reason}</span>
         <span class="score mono">{rd.scoreA}:{rd.scoreB}</span>
       </button>
-      <div class="eco">
+      <div class="eco mono">
         {#each [0, 1] as t (t)}
-          <span class={cls(rd.sideOf[t])}>
-            {ri.buyType[t]} <span class="muted">{money(ri.equipValue[t])}</span>
-          </span>
+          <span class={cls(rd.sideOf[t])}>{ri.buyType[t]} {money(ri.equipValue[t])}</span>
         {/each}
-        {#if ri.clutch}
-          <span class="clutch">1v{ri.clutch.versus} {r.playerName(ri.clutch.player)} {ri.clutch.won ? 'won' : 'lost'}</span>
-        {/if}
+        {#if r.roundBlunders[i].length}<span class="ev">{r.roundBlunders[i].length} ev</span>{/if}
       </div>
       {#if i === current}
-        <ul>
-          {#each events(i) as ev, j (j)}
-            {@const t = at(i, ev.tick)}
-            <li>
-              <button onclick={() => v.seek(ev.tick - 3 * r.rate)}>
-                <span class="time mono" class:bomb={t.bomb}>{t.text}</span>
-                {#if ev.kill}
-                  {@const k = ev.kill}
-                  <span class={cls(k.killerSide)}>{r.playerName(k.killer)}</span>
-                  <span class="muted">{weaponName(k.weapon)}{k.headshot ? ' HS' : ''}</span>
-                  <span class={cls(k.victimSide)}>{r.playerName(k.victim)}</span>
-                  {#if ev.traded}<span class="tag">traded</span>{/if}
-                {:else if ev.bomb}
-                  <span>{ev.bomb.kind === 'planted' ? `Planted on ${ev.bomb.site}` : 'Defused'} by {r.playerName(ev.bomb.player)}</span>
-                {/if}
-              </button>
-            </li>
+        <div class="notes">
+          {#each [0, 1] as t (t)}
+            {#if ri.setup?.[t]}
+              <p class="setup"><span class="label {cls(rd.sideOf[t])}">{rd.sideOf[t] === 3 ? 'CT' : 'T'} at 20s</span> {ri.setup[t]}</p>
+            {/if}
           {/each}
-        </ul>
+          {#if ri.hit}
+            <p class="setup"><span class="label">Hit</span> T reached site {ri.hit} after {Math.round(ri.hitTime)}s</p>
+          {/if}
+          <ol>
+            {#each (ri.story ?? []).filter((l) => l.kind !== 'setup' && l.kind !== 'hit') as line, j (j)}
+              {@const t = at(i, line.tick)}
+              <li class={line.kind}>
+                <button onclick={() => v.seek(line.tick - 3 * r.rate)}>
+                  <span class="time mono" class:bomb={t.bomb}>{line.kind === 'end' ? 'end' : t.text}</span>
+                  <span class="text">{line.text}</span>
+                </button>
+              </li>
+            {/each}
+          </ol>
+        </div>
       {/if}
     </section>
   {/each}
@@ -84,38 +66,44 @@
 
 <style>
   .rounds {
-    padding: 6px 8px 20px;
+    padding: 4px 0 24px;
   }
 
   section {
-    border-bottom: 1px solid var(--line);
-    padding: 4px 0;
+    border-bottom: 1px solid var(--rule);
+    padding: 6px 0 8px;
   }
 
   section.current {
-    background: var(--panel-2);
-    border-radius: 6px;
+    background: var(--desk-2);
+    box-shadow: inset 2px 0 0 var(--marker);
   }
 
   .head {
     width: 100%;
     display: grid;
-    grid-template-columns: 24px 1fr auto auto;
-    gap: 8px;
-    align-items: center;
-    background: transparent;
+    grid-template-columns: 26px 1fr auto auto;
+    gap: 10px;
+    align-items: baseline;
     border: none;
+    border-radius: 0;
     text-align: left;
-    padding: 4px 6px;
+    padding: 4px 16px;
+  }
+
+  .head:hover {
+    background: transparent;
   }
 
   .num {
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
+    color: var(--pencil);
+    font-size: 11px;
   }
 
   .winner {
+    font-family: var(--serif);
     font-weight: 600;
+    font-size: 14px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -123,56 +111,108 @@
 
   .reason {
     font-size: 11.5px;
+    color: var(--pencil);
+  }
+
+  .score {
+    font-size: 12px;
   }
 
   .eco {
     display: flex;
-    gap: 12px;
-    font-size: 11.5px;
-    padding: 0 6px 4px 38px;
-    flex-wrap: wrap;
+    gap: 14px;
+    font-size: 10.5px;
+    padding: 0 16px 0 52px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 
-  .clutch {
-    color: var(--text-2);
+  .ev {
+    color: var(--evidence);
   }
 
-  ul {
+  .notes {
+    padding: 8px 16px 2px 52px;
+  }
+
+  .setup {
+    margin: 0 0 4px;
+    font-size: 12px;
+    color: var(--graphite);
+  }
+
+  .setup .label {
+    margin-right: 6px;
+  }
+
+  ol {
     list-style: none;
-    margin: 2px 0 4px;
-    padding: 0 6px 0 30px;
+    margin: 8px 0 0;
+    padding: 0;
+    border-left: 1px solid var(--rule-2);
   }
 
   li button {
     width: 100%;
-    display: flex;
-    gap: 7px;
-    align-items: center;
-    background: transparent;
-    border: none;
-    padding: 3px 6px;
-    font-size: 12px;
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    gap: 8px;
     text-align: left;
+    border: none;
+    border-radius: 0;
+    padding: 4px 6px 4px 10px;
+    font-size: 12.5px;
+    color: var(--graphite);
+    position: relative;
+  }
+
+  li button::before {
+    content: '';
+    position: absolute;
+    left: -3px;
+    top: 10px;
+    width: 5px;
+    height: 5px;
+    background: var(--rule-2);
+    border-radius: 50%;
   }
 
   li button:hover {
-    background: var(--panel-3);
+    background: var(--desk-3);
+    color: var(--paper);
   }
 
   .time {
-    color: var(--muted);
-    min-width: 48px;
+    font-size: 11px;
+    color: var(--pencil);
   }
 
   .time.bomb {
-    color: var(--bad);
+    color: var(--marker);
   }
 
-  .tag {
-    font-size: 10px;
-    color: var(--muted);
-    border: 1px solid var(--line-2);
-    border-radius: 3px;
-    padding: 0 3px;
+  li.opening .text,
+  li.swing .text {
+    color: var(--paper);
+  }
+
+  li.opening button::before,
+  li.swing button::before {
+    background: var(--marker);
+  }
+
+  li.plant button::before,
+  li.defuse button::before {
+    background: var(--evidence);
+  }
+
+  li.end .text {
+    font-family: var(--serif);
+    font-weight: 600;
+    color: var(--paper);
+  }
+
+  li.clutch .text {
+    font-style: italic;
   }
 </style>

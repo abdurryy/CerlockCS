@@ -4,13 +4,15 @@ import { buildHeatmap, type HeatKind } from './render/heatmap'
 import type { ViewOptions } from './render/renderer'
 import type { Moment } from './types'
 
-export type Tab = 'review' | 'players' | 'aim' | 'rounds'
+export type Tab = 'briefing' | 'evidence' | 'players' | 'ballistics' | 'rounds' | 'map'
 
 export interface HeatSelection {
   label: string
   players: number[]
   kind: HeatKind
   side: number
+  // place limits the heatmap to one callout, by its raw name.
+  place?: string
 }
 
 export const SPEEDS = [0.25, 0.5, 1, 2, 4, 8]
@@ -34,14 +36,17 @@ export class Viewer {
   cones = $state<'all' | 'follow' | 'none'>('all')
   shots = $state(true)
   paths = $state(true)
+  callouts = $state(true)
+  evidence = $state(true)
   layer = $state(-1)
   ghosts = $state(-1)
   heat = $state<HeatSelection | null>(null)
   focus = $state<number[]>([])
   engagement = $state(-1)
+  blunder = $state(-1)
   // inspect is the player open in the Players and Aim tabs.
   inspect = $state(-1)
-  tab = $state<Tab>('review')
+  tab = $state<Tab>('briefing')
   skipFreeze = $state(true)
 
   live = 0
@@ -98,6 +103,18 @@ export class Viewer {
     this.playing = true
   }
 
+  // openBlunder jumps to a blunder with both players in focus.
+  openBlunder(i: number) {
+    const b = this.replay.blunders[i]
+    if (!b) return
+    this.blunder = i
+    const r = this.replay.round(b.round)
+    this.seek(Math.max(r.startTick, b.tick - 3 * this.replay.rate))
+    if (b.player >= 0) this.follow = b.player
+    this.focus = [b.player, b.other].filter((p) => p >= 0)
+    this.playing = true
+  }
+
   advance(dt: number, now: number) {
     const r = this.replay
     if (this.playing) {
@@ -128,7 +145,7 @@ export class Viewer {
   heatCanvas(level: number): HTMLCanvasElement | null {
     const h = this.heat
     if (!h) return null
-    const key = `${h.kind}|${h.side}|${h.players.join(',')}|${level}`
+    const key = `${h.kind}|${h.side}|${h.players.join(',')}|${h.place ?? ''}|${level}`
     if (this.heatCache?.key !== key) {
       this.heatCache = { key, canvas: buildHeatmap(this.replay, this.map, { ...h, level }) }
     }
@@ -144,6 +161,8 @@ export class Viewer {
       cones: this.cones,
       shots: this.shots,
       paths: this.paths,
+      callouts: this.callouts,
+      evidence: this.evidence,
       layer: this.layer,
       ghosts: this.ghosts,
       heat: this.heatCanvas(level),

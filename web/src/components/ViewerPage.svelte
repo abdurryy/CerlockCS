@@ -8,7 +8,7 @@
 
   let viewer = $state.raw<Viewer | null>(null)
   let progress = $state(0)
-  let stage = $state('Loading replay')
+  let stage = $state('Opening the case file')
   let error = $state('')
 
   $effect(() => {
@@ -17,7 +17,7 @@
       try {
         const start = performance.now()
         const replay = await loadReplay(id, (p) => (progress = p))
-        stage = 'Loading map'
+        stage = 'Laying out the map'
         const map = await MapView.load(replay)
         if (cancelled) return
         console.info(`replay ready in ${Math.round(performance.now() - start)} ms`)
@@ -38,9 +38,9 @@
   <div class="loading">
     {#if error}
       <p class="error">{error}</p>
-      <a href="#/">Back to library</a>
+      <a href="#/">Back to case files</a>
     {:else}
-      <p>{stage}</p>
+      <span class="label">{stage}</span>
       <div class="bar"><div style="width: {Math.round(progress * 100)}%"></div></div>
     {/if}
   </div>
@@ -54,24 +54,23 @@
     align-items: center;
     justify-content: center;
     gap: 10px;
-    color: var(--text-2);
+    color: var(--graphite);
   }
 
   .bar {
     width: 260px;
-    height: 4px;
-    border-radius: 2px;
-    background: var(--panel-3);
+    height: 2px;
+    background: var(--rule-2);
     overflow: hidden;
   }
 
   .bar div {
     height: 100%;
-    background: var(--accent);
+    background: var(--marker);
     transition: width 0.15s;
   }
 
   .error {
-    color: var(--bad);
+    color: var(--marker);
   }
 </style>

@@ -1,28 +1,35 @@
+@import './fonts.css';
+
 :root {
-  --bg: #0b0f14;
-  --panel: #11161d;
-  --panel-2: #161c25;
-  --panel-3: #1c2430;
-  --line: #232c38;
-  --line-2: #2e3947;
-  --text: #e6edf3;
-  --text-2: #a7b3c2;
-  --muted: #6e7b8b;
-  --ct: #5aa9ff;
-  --t: #f5a524;
-  --good: #3fcf6e;
-  --warn: #f2d23a;
-  --bad: #ff5d5d;
-  --accent: #7c9cff;
-  --radius: 8px;
-  --mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+  --ink: #0e1013;
+  --desk: #15171b;
+  --desk-2: #1b1e23;
+  --desk-3: #22262c;
+  --rule: #262a31;
+  --rule-2: #343941;
+  --paper: #ece6da;
+  --graphite: #9c978c;
+  --pencil: #6a665e;
+  --marker: #e5484d;
+  --marker-soft: rgba(229, 72, 77, 0.14);
+  --evidence: #f2c14e;
+  --verdigris: #5bae8c;
+  --rust: #d9783b;
+  --ct: #7eaad9;
+  --t: #dda34a;
+
+  --serif: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  --sans: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
   color-scheme: dark;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--sans);
   font-size: 13px;
-  line-height: 1.4;
-  color: var(--text);
-  background: var(--bg);
+  line-height: 1.45;
+  color: var(--paper);
+  background: var(--ink);
   -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'ss02';
 }
 
 * {
@@ -36,53 +43,86 @@ body,
   height: 100%;
 }
 
+body {
+  /* A very light grain so the dark surfaces read as paper, not plastic. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.92 0 0 0 0 0.9 0 0 0 0 0.85 0 0 0 0.035 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
 button {
   font: inherit;
   color: inherit;
-  background: var(--panel-3);
-  border: 1px solid var(--line-2);
-  border-radius: 6px;
-  padding: 5px 10px;
+  background: transparent;
+  border: 1px solid var(--rule-2);
+  border-radius: 3px;
+  padding: 4px 9px;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 
 button:hover {
-  background: #232d3b;
-  border-color: #3a4757;
+  background: var(--desk-3);
+  border-color: #464c55;
 }
 
 button:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: default;
 }
 
-button.active {
-  background: #26324a;
-  border-color: var(--accent);
-  color: #fff;
+button.on {
+  border-color: var(--paper);
+  color: var(--paper);
+  background: var(--desk-3);
 }
 
-button.ghost {
-  background: transparent;
+button.plain {
   border-color: transparent;
 }
 
-button.ghost:hover {
-  background: var(--panel-3);
+button.plain:hover {
+  background: var(--desk-3);
 }
 
 select {
   font: inherit;
   color: inherit;
-  background: var(--panel-3);
-  border: 1px solid var(--line-2);
-  border-radius: 6px;
-  padding: 4px 6px;
+  background: var(--desk);
+  border: 1px solid var(--rule-2);
+  border-radius: 3px;
+  padding: 3px 6px;
 }
 
 a {
-  color: var(--accent);
+  color: var(--paper);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--serif);
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+/* Typed label, like on a folder tab. */
+.label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pencil);
+}
+
+.mono,
+.num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.serif {
+  font-family: var(--serif);
 }
 
 .ct {
@@ -93,28 +133,35 @@ a {
   color: var(--t);
 }
 
-.muted {
-  color: var(--muted);
+.dim {
+  color: var(--graphite);
 }
 
-.mono {
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
+.faint {
+  color: var(--pencil);
 }
 
-.num {
-  font-variant-numeric: tabular-nums;
+.good {
+  color: var(--verdigris);
+}
+
+.bad {
+  color: var(--marker);
+}
+
+::selection {
+  background: var(--marker-soft);
 }
 
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #263040;
+  background: #2b2f36;
   border-radius: 5px;
-  border: 2px solid var(--panel);
+  border: 2px solid var(--desk);
 }
 
 ::-webkit-scrollbar-track {

@@ -4,6 +4,7 @@
   import { SLOT_COLORS } from '../lib/render/renderer'
   import type { Viewer } from '../lib/viewer.svelte'
   import { weaponName } from '../lib/weapons'
+  import Glyph from './Glyph.svelte'
 
   let { v, team }: { v: Viewer; team: number } = $props()
   const r = $derived(v.replay)
@@ -21,159 +22,158 @@
     return { side: r.sideOf(team, round), rows, money }
   })
 
-  function utility(u: number): { cls: string; label: string; title: string }[] {
+  function utility(u: number): string[] {
     const out = []
-    if (u & UTIL.smoke) out.push({ cls: 'smoke', label: 'S', title: 'Smoke' })
-    if (u & UTIL.flash1) out.push({ cls: 'flash', label: 'F', title: 'Flash' })
-    if (u & UTIL.flash2) out.push({ cls: 'flash', label: 'F', title: 'Flash' })
-    if (u & UTIL.he) out.push({ cls: 'he', label: 'H', title: 'HE grenade' })
-    if (u & UTIL.fire) out.push({ cls: 'fire', label: 'M', title: 'Molotov / incendiary' })
-    if (u & UTIL.decoy) out.push({ cls: 'decoy', label: 'D', title: 'Decoy' })
+    if (u & UTIL.smoke) out.push('smoke')
+    if (u & UTIL.flash1) out.push('flash')
+    if (u & UTIL.flash2) out.push('flash')
+    if (u & UTIL.he) out.push('he')
+    if (u & UTIL.fire) out.push('fire')
+    if (u & UTIL.decoy) out.push('decoy')
     return out
   }
+
+  const hpColor = (hp: number) => (hp > 50 ? 'var(--verdigris)' : hp > 20 ? 'var(--evidence)' : 'var(--marker)')
 </script>
 
-<section class="panel {view.side === 3 ? 'ct' : 't'}">
+<section class={view.side === 3 ? 'ct' : 't'}>
   <header>
-    <span class="side">{view.side === 3 ? 'CT' : 'T'}</span>
-    <strong class="name">{r.teamName(team)}</strong>
+    <span class="side mono">{view.side === 3 ? 'CT' : 'T'}</span>
+    <h2>{r.teamName(team)}</h2>
     <span class="money mono" title="Team money">${view.money.toLocaleString('en-US')}</span>
   </header>
   {#each view.rows as { p, s, st } (p)}
     <button class="row" class:dead={!s.alive} class:followed={v.follow === p} onclick={() => v.setFollow(p)} title="Follow {r.playerName(p)}">
-      <span class="slot" style="background: {SLOT_COLORS[(r.slot[p] - 1) % SLOT_COLORS.length]}">{r.slot[p]}</span>
-      <span class="who">
-        <span class="pname">{r.playerName(p)}</span>
-        <span class="kda mono">{st.kills} / {st.assists} / {st.deaths}</span>
+      <span class="slot mono" style="--slot: {SLOT_COLORS[(r.slot[p] - 1) % SLOT_COLORS.length]}">{r.slot[p]}</span>
+      <span class="main">
+        <span class="line">
+          <span class="name">{r.playerName(p)}</span>
+          <span class="kda mono">{st.kills}<i>/</i>{st.assists}<i>/</i>{st.deaths}</span>
+        </span>
+        {#if s.alive}
+          <span class="hp"><span style="width: {s.hp}%; background: {hpColor(s.hp)}"></span></span>
+          <span class="line">
+            <span class="gear mono">
+              <span class="weapon">{weaponName(s.weapon)}</span>
+              {#if s.primary && s.primary !== s.weapon}<span class="faint">{weaponName(s.primary)}</span>{/if}
+            </span>
+            <span class="cash mono">${s.money}</span>
+          </span>
+          <span class="line kit">
+            <span class="icons">
+              {#if s.armor > 0}<Glyph name={s.flags & FLAG.helmet ? 'helmet' : 'armor'} title={s.flags & FLAG.helmet ? 'Kevlar and helmet' : 'Kevlar'} />{/if}
+              {#if s.flags & FLAG.kit}<Glyph name="kit" title="Defuse kit" />{/if}
+              {#if s.flags & FLAG.bomb}<Glyph name="bomb" title="Bomb" />{/if}
+              {#if s.armor > 0 || s.flags & (FLAG.kit | FLAG.bomb)}<span class="sep"></span>{/if}
+              {#each utility(s.util) as u, i (i)}<Glyph name={u} title={u} />{/each}
+            </span>
+            {#if s.flash > 0.3}<span class="blind mono">blind {s.flash.toFixed(1)}</span>{:else}<span class="hpv mono">{s.hp}</span>{/if}
+          </span>
+        {:else}
+          <span class="line">
+            <span class="label">{s.present ? 'dead' : 'not connected'}</span>
+            <span class="cash mono">${s.money}</span>
+          </span>
+        {/if}
       </span>
-      {#if s.alive}
-        <span class="hp">
-          <span class="bar"><span style="width: {s.hp}%" class:low={s.hp <= 30}></span></span>
-          <span class="mono val">{s.hp}</span>
-        </span>
-        <span class="gear">
-          <span class="weapon">{weaponName(s.weapon)}</span>
-          {#if s.primary && s.primary !== s.weapon}<span class="muted">{weaponName(s.primary)}</span>{/if}
-        </span>
-        <span class="extras">
-          {#if s.armor > 0}<span class="badge" title={s.flags & FLAG.helmet ? 'Kevlar and helmet' : 'Kevlar'}>{s.flags & FLAG.helmet ? 'AH' : 'A'}</span>{/if}
-          {#if s.flags & FLAG.kit}<span class="badge kit" title="Defuse kit">K</span>{/if}
-          {#if s.flags & FLAG.bomb}<span class="badge bomb" title="Carrying the bomb">C4</span>{/if}
-          {#each utility(s.util) as u, i (i)}<span class="nade {u.cls}" title={u.title}>{u.label}</span>{/each}
-          {#if s.flash > 0.3}<span class="blind">blind {s.flash.toFixed(1)}s</span>{/if}
-        </span>
-        <span class="cash mono">${s.money}</span>
-      {:else}
-        <span class="dead-label">{s.present ? 'dead' : 'not connected'}</span>
-        <span class="cash mono">${s.money}</span>
-      {/if}
     </button>
   {/each}
 </section>
 
 <style>
-  .panel {
-    padding: 8px 8px 10px;
-    border-bottom: 1px solid var(--line);
+  section {
+    padding: 14px 0 8px;
+    border-bottom: 1px solid var(--rule);
   }
 
   header {
     display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 2px 4px 8px;
+    align-items: baseline;
+    gap: 9px;
+    padding: 0 14px 10px;
   }
 
   .side {
     font-size: 11px;
-    font-weight: 700;
-    padding: 1px 6px;
-    border-radius: 4px;
-    color: #0b0f14;
+    font-weight: 600;
+    letter-spacing: 0.08em;
   }
 
   .ct .side {
-    background: var(--ct);
+    color: var(--ct);
   }
 
   .t .side {
-    background: var(--t);
+    color: var(--t);
   }
 
-  .name {
+  h2 {
     flex: 1;
+    font-size: 16px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .money {
-    color: var(--good);
-    font-size: 12px;
+    color: var(--verdigris);
+    font-size: 11.5px;
   }
 
   .row {
     width: 100%;
     display: grid;
-    grid-template-columns: 20px 1fr 64px;
-    grid-template-areas:
-      'slot who hp'
-      'slot gear cash'
-      'slot extras extras';
-    gap: 2px 8px;
+    grid-template-columns: 18px 1fr;
+    gap: 10px;
     text-align: left;
-    padding: 6px 6px;
-    margin-bottom: 3px;
-    background: var(--panel-2);
-    border: 1px solid transparent;
-    border-left: 3px solid transparent;
-    border-radius: 6px;
-  }
-
-  .ct .row {
-    border-left-color: rgba(90, 169, 255, 0.6);
-  }
-
-  .t .row {
-    border-left-color: rgba(245, 165, 36, 0.6);
+    padding: 8px 14px 8px 12px;
+    border: none;
+    border-top: 1px solid var(--rule);
+    border-left: 2px solid transparent;
+    border-radius: 0;
   }
 
   .row:hover {
-    background: var(--panel-3);
+    background: var(--desk-2);
   }
 
   .row.followed {
-    border-color: rgba(255, 255, 255, 0.6);
-    background: #1d2633;
+    background: var(--desk-2);
+    border-left-color: var(--marker);
   }
 
   .row.dead {
-    opacity: 0.5;
+    opacity: 0.45;
+  }
+
+  .row.dead .name {
+    text-decoration: line-through;
+    text-decoration-color: rgba(236, 230, 218, 0.4);
   }
 
   .slot {
-    grid-area: slot;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #0b0f14;
-    font-weight: 700;
-    font-size: 11px;
-    margin-top: 2px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--slot);
+    padding-top: 1px;
   }
 
-  .who {
-    grid-area: who;
+  .main {
     display: flex;
-    gap: 6px;
-    align-items: baseline;
+    flex-direction: column;
+    gap: 4px;
     min-width: 0;
   }
 
-  .pname {
+  .line {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .name {
     font-weight: 600;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -182,127 +182,69 @@
 
   .kda {
     font-size: 11px;
-    color: var(--muted);
+    color: var(--graphite);
     white-space: nowrap;
   }
 
+  .kda i {
+    font-style: normal;
+    color: var(--pencil);
+    margin: 0 2px;
+  }
+
   .hp {
-    grid-area: hp;
-    display: flex;
-    align-items: center;
-    gap: 5px;
+    height: 2px;
+    background: var(--rule-2);
+    display: block;
   }
 
-  .bar {
-    flex: 1;
-    height: 5px;
-    background: #2a3340;
-    border-radius: 3px;
-    overflow: hidden;
-  }
-
-  .bar span {
+  .hp span {
     display: block;
     height: 100%;
-    background: var(--good);
-  }
-
-  .bar span.low {
-    background: var(--bad);
-  }
-
-  .val {
-    font-size: 11px;
-    width: 22px;
-    text-align: right;
   }
 
   .gear {
-    grid-area: gear;
     display: flex;
-    gap: 6px;
-    font-size: 12px;
+    gap: 7px;
+    font-size: 11.5px;
     min-width: 0;
     white-space: nowrap;
     overflow: hidden;
   }
 
   .weapon {
-    font-weight: 600;
+    color: var(--paper);
   }
 
   .cash {
-    grid-area: cash;
-    text-align: right;
     font-size: 11px;
-    color: var(--good);
+    color: var(--verdigris);
   }
 
-  .extras {
-    grid-area: extras;
+  .icons {
     display: flex;
-    gap: 3px;
+    gap: 4px;
     align-items: center;
-    flex-wrap: wrap;
-    min-height: 15px;
+    min-height: 12px;
   }
 
-  .badge,
-  .nade {
-    font-size: 10px;
-    font-weight: 700;
-    line-height: 14px;
-    padding: 0 4px;
-    border-radius: 3px;
-    background: #2a3340;
-    color: var(--text-2);
+  .sep {
+    width: 1px;
+    height: 10px;
+    background: var(--rule-2);
+    margin: 0 2px;
   }
 
-  .badge.kit {
-    color: var(--ct);
-  }
-
-  .badge.bomb {
-    background: #4a1f22;
-    color: #ff8080;
-  }
-
-  .nade.smoke {
-    background: #3a414b;
-    color: #e6edf3;
-  }
-
-  .nade.flash {
-    background: #4a4630;
-    color: #fff4b0;
-  }
-
-  .nade.he {
-    background: #4a2420;
-    color: #ff8a7a;
-  }
-
-  .nade.fire {
-    background: #4a2c18;
-    color: #ffae6b;
-  }
-
-  .nade.decoy {
-    background: #263a28;
-    color: #8bd18b;
+  .hpv {
+    font-size: 11px;
+    color: var(--pencil);
   }
 
   .blind {
-    font-size: 10px;
-    color: #fff;
-    background: rgba(255, 255, 255, 0.18);
+    font-size: 10.5px;
+    color: var(--ink);
+    background: var(--paper);
     padding: 0 4px;
-    border-radius: 3px;
-  }
-
-  .dead-label {
-    grid-area: gear;
-    font-size: 12px;
-    color: var(--muted);
+    border-radius: 2px;
   }
 </style>

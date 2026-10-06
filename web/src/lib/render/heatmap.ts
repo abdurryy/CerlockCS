@@ -9,19 +9,21 @@ export interface HeatConfig {
   // 0 for both sides, otherwise 2 (T) or 3 (CT).
   side: number
   level: number
+  // place limits the data to one callout, by its raw name.
+  place?: string
 }
 
 const G = 256
 const CELL = 1024 / G
 
-// Colour ramp from transparent blue through yellow to red.
+// Colour ramp from faint paper through ochre to marker red.
 const RAMP: [number, number, number, number][] = [
   [0, 0, 0, 0],
-  [40, 90, 255, 0.35],
-  [40, 210, 255, 0.55],
-  [250, 230, 60, 0.75],
-  [255, 120, 30, 0.85],
-  [255, 40, 40, 0.95],
+  [236, 230, 218, 0.18],
+  [242, 193, 78, 0.45],
+  [221, 140, 60, 0.65],
+  [229, 72, 77, 0.8],
+  [255, 235, 230, 0.95],
 ]
 
 function ramp(v: number): [number, number, number, number] {
@@ -56,6 +58,7 @@ export function buildHeatmap(r: Replay, map: MapView, cfg: HeatConfig): HTMLCanv
   }
 
   const players = new Set(cfg.players)
+  const placeIndex = cfg.place ? r.places.indexOf(cfg.place) : -1
   if (cfg.kind === 'positions') {
     const F = r.frames
     // Only count live round time, freeze time would dominate otherwise.
@@ -71,11 +74,14 @@ export function buildHeatmap(r: Replay, map: MapView, cfg: HeatConfig): HTMLCanv
         const i = p * F + f
         if (!(r.pflags[i] & FLAG.alive)) continue
         if (cfg.side && r.pside[i] !== cfg.side) continue
+        if (placeIndex >= 0 && r.pplace[i] !== placeIndex) continue
         splat(r.px[i], r.py[i], r.pz[i], 1)
       }
     }
   } else {
     for (const k of r.kills) {
+      if (cfg.kind === 'deaths' && cfg.place && k.victimPlace !== cfg.place) continue
+      if (cfg.kind === 'kills' && cfg.place && k.killerPlace !== cfg.place) continue
       if (cfg.kind === 'deaths' && players.has(k.victim) && (!cfg.side || k.victimSide === cfg.side)) {
         splat(k.victimPos[0], k.victimPos[1], k.victimPos[2], 1)
       }

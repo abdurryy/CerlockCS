@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { Renderer } from '../lib/render/renderer'
+  import { Renderer, type Hit } from '../lib/render/renderer'
   import type { Viewer } from '../lib/viewer.svelte'
 
   let { v }: { v: Viewer } = $props()
@@ -9,8 +9,9 @@
   let canvas: HTMLCanvasElement
   let renderer: Renderer | null = null
   let cursor = $state('grab')
+  let tip = $state<{ x: number; y: number; title: string; detail: string } | null>(null)
 
-  // Exposed so the toolbar can show the right level on two floor maps.
+  // Exposed so the toolbar can show the right floor on two level maps.
   export function level(): number {
     return renderer?.level ?? 0
   }
@@ -49,6 +50,15 @@
     return [e.clientX - rect.left, e.clientY - rect.top]
   }
 
+  function describe(h: Hit | null, x: number, y: number) {
+    if (h?.kind !== 'blunder') {
+      tip = null
+      return
+    }
+    const b = v.replay.blunders[h.id]
+    tip = b ? { x, y, title: b.title, detail: b.detail } : null
+  }
+
   function onDown(e: PointerEvent) {
     if (e.button !== 0) return
     drag = { x: e.clientX, y: e.clientY, moved: false }
@@ -65,6 +75,7 @@
         // Panning by hand takes over from the follow camera.
         if (v.follow >= 0) v.follow = -1
         cursor = 'grabbing'
+        tip = null
       }
       if (drag.moved) {
         renderer.cam.pan(dx, dy)
@@ -74,16 +85,22 @@
       return
     }
     const [x, y] = pos(e)
-    renderer.hover = renderer.hitTest(x, y)
-    cursor = renderer.hover >= 0 ? 'pointer' : 'grab'
+    const h = renderer.hitTest(x, y)
+    renderer.hover = h
+    cursor = h ? 'pointer' : 'grab'
+    describe(h, x, y)
   }
 
   function onUp(e: PointerEvent) {
     if (!renderer) return
     if (drag && !drag.moved) {
       const [x, y] = pos(e)
-      const p = renderer.hitTest(x, y)
-      if (p >= 0) v.setFollow(p)
+      const h = renderer.hitTest(x, y)
+      if (h?.kind === 'player') v.setFollow(h.id)
+      if (h?.kind === 'blunder') {
+        v.openBlunder(h.id)
+        v.tab = 'evidence'
+      }
     }
     drag = null
     cursor = 'grab'
@@ -108,7 +125,7 @@
   }
 
   $effect(() => {
-    // Zoom in when a follow starts, out when it ends.
+    // Zoom in when a follow starts.
     const following = v.follow >= 0
     if (!renderer) return
     if (following && renderer.cam.zoom < 1.8) renderer.cam.zoom = 2.4
@@ -122,10 +139,20 @@
     onpointerdown={onDown}
     onpointermove={onMove}
     onpointerup={onUp}
-    onpointerleave={() => renderer && (renderer.hover = -1)}
+    onpointerleave={() => {
+      if (renderer) renderer.hover = null
+      tip = null
+    }}
     onwheel={onWheel}
     ondblclick={onDouble}
   ></canvas>
+  {#if tip}
+    <div class="tip" style="left: {tip.x + 14}px; top: {tip.y - 10}px">
+      <span class="label">Evidence</span>
+      <strong>{tip.title}</strong>
+      <p>{tip.detail}</p>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -138,5 +165,33 @@
   canvas {
     display: block;
     touch-action: none;
+  }
+
+  .tip {
+    position: absolute;
+    max-width: 260px;
+    background: rgba(21, 23, 27, 0.97);
+    border: 1px solid var(--rule-2);
+    border-left: 2px solid var(--evidence);
+    border-radius: 3px;
+    padding: 8px 10px;
+    pointer-events: none;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    z-index: 4;
+  }
+
+  strong {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 14px;
+  }
+
+  p {
+    margin: 0;
+    color: var(--graphite);
+    font-size: 12px;
   }
 </style>

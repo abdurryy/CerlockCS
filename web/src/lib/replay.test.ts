@@ -22,7 +22,7 @@ function build(cols: Col[], frames: number, players: number): ArrayBuffer {
   }
   const header = (base: number) =>
     JSON.stringify({
-      version: 1, frames, match, extra: { analysis: { players: [], teams: [], rounds: [], insights: [], aim: [] }, parseMs: 1 },
+      version: 2, frames, match, extra: { analysis: { players: [], teams: [], rounds: [], insights: [], aim: [], blunders: [] }, parseMs: 1 },
       columns: Object.fromEntries(cols.map((c, i) => [c.name, { type: c.type, offset: base + offsets[i], length: c.data.length }])),
     })
   const base = align(12 + new TextEncoder().encode(header(100000)).length + 64)
@@ -30,7 +30,7 @@ function build(cols: Col[], frames: number, players: number): ArrayBuffer {
   const buf = new ArrayBuffer(base + rel)
   const dv = new DataView(buf)
   new Uint8Array(buf).set(new TextEncoder().encode('CRLK'), 0)
-  dv.setUint32(4, 1, true)
+  dv.setUint32(4, 2, true)
   dv.setUint32(8, json.length, true)
   new Uint8Array(buf).set(json, 12)
   cols.forEach((c, i) => new ctor[c.type](buf, base + offsets[i], c.data.length).set(c.data))
@@ -88,5 +88,14 @@ describe('Replay', () => {
   it('does not slide players across teleports', () => {
     const s = sample().state(1, 3)
     expect(s.x).toBe(50)
+  })
+})
+
+describe('prettyPlace', () => {
+  it('splits callout names like the Go side', async () => {
+    const { prettyPlace } = await import('./replay')
+    expect(prettyPlace('BombsiteA')).toBe('Bombsite A')
+    expect(prettyPlace('CTSpawn')).toBe('CT Spawn')
+    expect(prettyPlace('TopofMid')).toBe('Top of Mid')
   })
 })

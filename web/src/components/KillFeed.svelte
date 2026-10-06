@@ -17,21 +17,21 @@
 
 <div class="feed">
   {#each recent as k (k.tick * 100 + k.victim)}
-    <div class="row" class:mine={v.follow >= 0 && (k.killer === v.follow || k.victim === v.follow)}>
+    <div class="row {cls(k.killerSide)}" class:mine={v.follow >= 0 && (k.killer === v.follow || k.victim === v.follow)}>
       {#if k.killer >= 0}
         <span class={cls(k.killerSide)}>{r.playerName(k.killer)}</span>
         {#if k.assister >= 0}
-          <span class="muted">+</span>
-          <span class="{k.flashAssist ? 'flash' : ''} {cls(k.killerSide)}">{r.playerName(k.assister)}</span>
+          <span class="faint">+</span>
+          <span class={cls(k.killerSide)} class:flash={k.flashAssist}>{r.playerName(k.assister)}</span>
         {/if}
       {/if}
-      <span class="weapon">
-        {#if k.attackerBlind}<span class="tag" title="Killer was blind">blind</span>{/if}
+      <span class="weapon mono">
+        {#if k.attackerBlind}<span class="tag">blind</span>{/if}
         {weaponName(k.weapon)}
-        {#if k.wallbang}<span class="tag" title="Wallbang">wall</span>{/if}
-        {#if k.throughSmoke}<span class="tag" title="Through smoke">smoke</span>{/if}
-        {#if k.noScope}<span class="tag" title="No scope">noscope</span>{/if}
-        {#if k.headshot}<span class="hs" title="Headshot">HS</span>{/if}
+        {#if k.wallbang}<span class="tag">wall</span>{/if}
+        {#if k.throughSmoke}<span class="tag">smoke</span>{/if}
+        {#if k.noScope}<span class="tag">noscope</span>{/if}
+        {#if k.headshot}<span class="hs">hs</span>{/if}
       </span>
       <span class={cls(k.victimSide)}>{r.playerName(k.victim)}</span>
     </div>
@@ -41,8 +41,8 @@
 <style>
   .feed {
     position: absolute;
-    top: 74px;
-    right: 10px;
+    top: 78px;
+    right: 14px;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
@@ -54,37 +54,45 @@
   .row {
     display: flex;
     align-items: center;
-    gap: 6px;
-    background: rgba(13, 17, 23, 0.85);
-    padding: 3px 8px;
-    border-radius: 5px;
-    font-weight: 600;
+    gap: 7px;
+    background: rgba(14, 16, 19, 0.86);
+    padding: 3px 9px;
+    border-radius: 2px;
+    font-weight: 500;
     font-size: 12px;
     white-space: nowrap;
-    border: 1px solid transparent;
+    border-left: 2px solid transparent;
+  }
+
+  .row.ct {
+    border-left-color: var(--ct);
+  }
+
+  .row.t {
+    border-left-color: var(--t);
   }
 
   .row.mine {
-    border-color: rgba(255, 93, 93, 0.7);
+    box-shadow: inset 0 0 0 1px var(--marker);
   }
 
   .weapon {
-    color: var(--text-2);
-    font-weight: 500;
+    color: var(--graphite);
+    font-size: 11px;
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
   }
 
   .tag {
-    font-size: 10px;
-    color: var(--muted);
+    font-size: 9.5px;
+    color: var(--pencil);
   }
 
   .hs {
     font-size: 10px;
-    color: var(--bad);
-    font-weight: 700;
+    color: var(--marker);
+    font-weight: 600;
   }
 
   .flash {
