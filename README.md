@@ -144,7 +144,16 @@ For every fight the parser keeps a short window of the attacker's view angles an
 
 Counter strafing is already in: every shot stores the player's speed, and a shot counts as "still" when the player was slow enough for the weapon to be accurate.
 
-## Getting started
+## Download
+
+Get the latest version from the [releases page](https://github.com/abdurryy/CerlockCS/releases).
+
+- **Windows**: download `cerlock-<version>-windows-amd64.exe` and double click it. The viewer opens in your browser and demos in your CS2 replays folder show up by themselves. The exe is not signed, so Windows may say it is from an unknown publisher. Click "More info" and then "Run anyway".
+- **Linux and macOS**: download the `.tar.gz` for your system, extract it and run `./cerlock`.
+
+Everything is one file. Replays, radar images and icons are stored in `.cerlock` in your home folder.
+
+## Building from source
 
 You need Go 1.25+ and Node 22+.
 
@@ -155,7 +164,7 @@ make build
 ./bin/cerlock serve --open
 ```
 
-Then drop a demo on the page. To have demos parsed automatically, point the server at a folder:
+Then drop a demo on the page. The CS2 replays folder of a default Steam install is picked up automatically. To use another folder, point the server at it:
 
 ```sh
 ./bin/cerlock serve --demos "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive\game\csgo\replays"
@@ -167,7 +176,7 @@ Other options:
 --addr      address to listen on (default 127.0.0.1:7350)
 --data      where replays and map images are stored (default ~/.cerlock)
 --demos     folder with demos, can be given more than once
---offline   never download radar images
+--offline   never download radar images or icons
 --workers   demos parsed at the same time
 ```
 
