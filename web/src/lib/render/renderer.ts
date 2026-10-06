@@ -64,6 +64,8 @@ export class Renderer {
     this.states = Array.from({ length: r.players }, () => emptyState())
   }
 
+  private framed = false
+
   resize(w: number, h: number) {
     this.dpr = window.devicePixelRatio || 1
     this.canvas.width = Math.round(w * this.dpr)
@@ -71,6 +73,22 @@ export class Renderer {
     this.canvas.style.width = `${w}px`
     this.canvas.style.height = `${h}px`
     this.cam.resize(w, h)
+    if (!this.framed && w > 1 && h > 1) {
+      this.framed = true
+      this.home()
+    }
+  }
+
+  // home frames the part of the map that was played on, radar images have
+  // a lot of empty space around them.
+  home() {
+    const [x0, y0, x1, y1] = this.map.bounds
+    const cam = this.cam
+    cam.rot = 0
+    cam.cx = (x0 + x1) / 2
+    cam.cy = (y0 + y1) / 2
+    const base = Math.min(cam.w, cam.h) / 1024
+    cam.zoom = Math.max(0.6, Math.min(cam.w / (x1 - x0), cam.h / (y1 - y0)) / base)
   }
 
   hitTest(sx: number, sy: number): number {

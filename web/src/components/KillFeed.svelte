@@ -41,7 +41,7 @@
 <style>
   .feed {
     position: absolute;
-    top: 10px;
+    top: 74px;
     right: 10px;
     display: flex;
     flex-direction: column;

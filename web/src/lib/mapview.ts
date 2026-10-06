@@ -22,6 +22,8 @@ export class MapView {
   scale: number
   readonly layers: Layer[]
   readonly known: boolean
+  // bounds is the part of the radar players actually used, in radar pixels.
+  bounds: [number, number, number, number] = [0, 0, 1024, 1024]
 
   private constructor(info: MapInfo, layers: Layer[]) {
     this.name = info.name
@@ -47,6 +49,7 @@ export class MapView {
     )
     const view = new MapView(info, layers)
     if (!info.known) view.fitToPlayers(replay)
+    view.bounds = view.walkedBounds(replay)
     for (const layer of view.layers) {
       if (!layer.image) {
         layer.image = view.floorPlan(replay, layer.level)
@@ -78,6 +81,28 @@ export class MapView {
       if (z < this.layers[i].level.altitudeMax) return i
     }
     return 0
+  }
+
+  private walkedBounds(r: Replay): [number, number, number, number] {
+    let x0 = Infinity
+    let y0 = Infinity
+    let x1 = -Infinity
+    let y1 = -Infinity
+    const F = r.frames
+    for (let p = 0; p < r.players; p++) {
+      for (let f = 0; f < F; f += 16) {
+        const i = p * F + f
+        if (!(r.pflags[i] & FLAG.alive)) continue
+        const [x, y] = this.toRadar(r.px[i], r.py[i])
+        if (x < x0) x0 = x
+        if (x > x1) x1 = x
+        if (y < y0) y0 = y
+        if (y > y1) y1 = y
+      }
+    }
+    if (!isFinite(x0) || x1 - x0 < 50 || y1 - y0 < 50) return [0, 0, SIZE, SIZE]
+    const pad = 40
+    return [x0 - pad, y0 - pad, x1 + pad, y1 + pad]
   }
 
   // fitToPlayers is used for maps without overview data: centre the radar

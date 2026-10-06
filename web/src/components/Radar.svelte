@@ -16,7 +16,7 @@
   }
 
   export function resetCamera() {
-    renderer?.cam.reset()
+    renderer?.home()
   }
 
   onMount(() => {
@@ -104,7 +104,7 @@
 
   function onDouble() {
     v.follow = -1
-    renderer?.cam.reset()
+    renderer?.home()
   }
 
   $effect(() => {

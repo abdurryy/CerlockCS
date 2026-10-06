@@ -63,13 +63,6 @@ export class Camera {
     this.cy -= (dx * n + dy * c) / s
   }
 
-  reset() {
-    this.cx = RADAR / 2
-    this.cy = RADAR / 2
-    this.zoom = 1
-    this.rot = 0
-  }
-
   // follow eases the camera toward a point, dt in seconds.
   follow(px: number, py: number, dt: number) {
     const k = 1 - Math.exp(-dt * 9)

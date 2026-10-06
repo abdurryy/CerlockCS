@@ -1,5 +1,6 @@
 <script lang="ts">
   import { clock, money } from '../lib/format'
+  import type { BombEvent, Kill } from '../lib/types'
   import type { Viewer } from '../lib/viewer.svelte'
   import { REASON, weaponName } from '../lib/weapons'
 
@@ -20,6 +21,20 @@
   }
 
   const cls = (side: number) => (side === 3 ? 'ct' : 't')
+
+  // Kills and bomb plants/defuses of a round in the order they happened.
+  function events(round: number): { tick: number; kill?: Kill; bomb?: BombEvent; traded?: boolean }[] {
+    const traded = new Set(info[round].traded ?? [])
+    const list: { tick: number; kill?: Kill; bomb?: BombEvent; traded?: boolean }[] = r.roundKills[round].map((k) => ({
+      tick: k.tick,
+      kill: k,
+      traded: traded.has(r.kills.indexOf(k)),
+    }))
+    for (const b of r.roundBomb[round]) {
+      if (b.kind === 'planted' || b.kind === 'defused') list.push({ tick: b.tick, bomb: b })
+    }
+    return list.sort((a, b) => a.tick - b.tick)
+  }
 </script>
 
 <div class="rounds">
@@ -44,24 +59,20 @@
       </div>
       {#if i === current}
         <ul>
-          {#each r.roundKills[i] as k, j (j)}
-            {@const t = at(i, k.tick)}
+          {#each events(i) as ev, j (j)}
+            {@const t = at(i, ev.tick)}
             <li>
-              <button onclick={() => v.seek(k.tick - 3 * r.rate)}>
+              <button onclick={() => v.seek(ev.tick - 3 * r.rate)}>
                 <span class="time mono" class:bomb={t.bomb}>{t.text}</span>
-                <span class={cls(k.killerSide)}>{r.playerName(k.killer)}</span>
-                <span class="muted">{weaponName(k.weapon)}{k.headshot ? ' HS' : ''}</span>
-                <span class={cls(k.victimSide)}>{r.playerName(k.victim)}</span>
-                {#if ri.traded?.includes(r.kills.indexOf(k))}<span class="tag">traded</span>{/if}
-              </button>
-            </li>
-          {/each}
-          {#each r.roundBomb[i].filter((b) => b.kind === 'planted' || b.kind === 'defused') as b, j (j)}
-            {@const t = at(i, b.tick)}
-            <li>
-              <button onclick={() => v.seek(b.tick - 3 * r.rate)}>
-                <span class="time mono" class:bomb={t.bomb}>{t.text}</span>
-                <span>{b.kind === 'planted' ? `Planted on ${b.site}` : 'Defused'} by {r.playerName(b.player)}</span>
+                {#if ev.kill}
+                  {@const k = ev.kill}
+                  <span class={cls(k.killerSide)}>{r.playerName(k.killer)}</span>
+                  <span class="muted">{weaponName(k.weapon)}{k.headshot ? ' HS' : ''}</span>
+                  <span class={cls(k.victimSide)}>{r.playerName(k.victim)}</span>
+                  {#if ev.traded}<span class="tag">traded</span>{/if}
+                {:else if ev.bomb}
+                  <span>{ev.bomb.kind === 'planted' ? `Planted on ${ev.bomb.site}` : 'Defused'} by {r.playerName(ev.bomb.player)}</span>
+                {/if}
               </button>
             </li>
           {/each}
