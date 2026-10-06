@@ -36,9 +36,9 @@ func fixture() *match.Match {
 		m.Kills = append(m.Kills, match.Kill{Tick: tick, Killer: killer, Victim: victim, Assister: -1, Weapon: 303,
 			VictimPos: [3]float32{float32(victim * 100), 0, 0}})
 	}
-	kill(1500, 0, 5)  // opening kill for team 0
-	kill(1600, 6, 1)  // team 1 kills player 1
-	kill(1728, 2, 6)  // traded two seconds later
+	kill(1500, 0, 5) // opening kill for team 0
+	kill(1600, 6, 1) // team 1 kills player 1
+	kill(1728, 2, 6) // traded two seconds later
 	kill(3000, 2, 7)
 	kill(3100, 2, 8)
 	kill(3200, 9, 2)

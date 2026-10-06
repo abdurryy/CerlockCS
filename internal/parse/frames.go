@@ -2,6 +2,7 @@ package parse
 
 import (
 	"math"
+	"math/bits"
 	"strconv"
 
 	"github.com/golang/geo/r3"
@@ -219,7 +220,7 @@ func (c *collector) spottedBy(pawn st.Entity) uint32 {
 	for word, name := range spottedProps {
 		mask := propUint(pawn, name)
 		for mask != 0 {
-			bit := trailingZeros(mask)
+			bit := bits.TrailingZeros64(mask)
 			mask &= mask - 1
 			slot := word*32 + bit
 			if slot < len(c.slotPlayer) {
@@ -230,15 +231,6 @@ func (c *collector) spottedBy(pawn st.Entity) uint32 {
 		}
 	}
 	return out
-}
-
-func trailingZeros(v uint64) int {
-	n := 0
-	for v&1 == 0 {
-		v >>= 1
-		n++
-	}
-	return n
 }
 
 // loadout returns the best gun the player carries and their utility bits.

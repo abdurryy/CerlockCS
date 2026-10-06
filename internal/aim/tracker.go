@@ -54,13 +54,6 @@ func (h *history) since(from int32) []Sample {
 	return out
 }
 
-func (h *history) last() (Sample, bool) {
-	if h.n == 0 {
-		return Sample{}, false
-	}
-	return h.buf[(h.next-1+historySize)%historySize], true
-}
-
 type pair struct{ attacker, victim int }
 
 type pending struct {

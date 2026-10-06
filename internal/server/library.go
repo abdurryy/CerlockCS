@@ -149,7 +149,8 @@ func (l *Library) claim(job *Job) bool {
 	if _, ok := l.entries[job.ID]; ok {
 		return false
 	}
-	if _, ok := l.jobs[job.ID]; ok {
+	// A failed job can be claimed again, that is how retries work.
+	if j, ok := l.jobs[job.ID]; ok && j.Status != "error" {
 		return false
 	}
 	l.jobs[job.ID] = job

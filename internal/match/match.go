@@ -259,24 +259,6 @@ func (t *Track) Grow(n int) {
 	}
 }
 
-func (t *Track) Truncate(from int) {
-	t.X = t.X[from:]
-	t.Y = t.Y[from:]
-	t.Z = t.Z[from:]
-	t.Yaw = t.Yaw[from:]
-	t.Pitch = t.Pitch[from:]
-	t.HP = t.HP[from:]
-	t.Armor = t.Armor[from:]
-	t.Flags = t.Flags[from:]
-	t.Weapon = t.Weapon[from:]
-	t.Primary = t.Primary[from:]
-	t.Util = t.Util[from:]
-	t.Flash = t.Flash[from:]
-	t.Money = t.Money[from:]
-	t.Spotted = t.Spotted[from:]
-	t.Side = t.Side[from:]
-}
-
 // IndexAt returns the last frame at or before tick, or 0.
 func (f *Frames) IndexAt(tick int) int {
 	i := sort.Search(len(f.Ticks), func(i int) bool { return int(f.Ticks[i]) > tick })
@@ -355,15 +337,6 @@ type AimSamples struct {
 	// the direction to the victim's head.
 	Error   []float32
 	Visible []uint8
-}
-
-func (m *Match) RoundAt(tick int) int {
-	for i := len(m.Rounds) - 1; i >= 0; i-- {
-		if tick >= m.Rounds[i].StartTick {
-			return i
-		}
-	}
-	return 0
 }
 
 func (m *Match) TeamOf(player int) int {
