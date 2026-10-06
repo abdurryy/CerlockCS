@@ -1,6 +1,12 @@
 <script lang="ts">
+  import { flip } from 'svelte/animate'
+  import { cubicOut } from 'svelte/easing'
+  import { fade, fly } from 'svelte/transition'
+  import { weaponIcon } from '../lib/icons.svelte'
+  import type { Kill } from '../lib/types'
   import type { Viewer } from '../lib/viewer.svelte'
   import { weaponName } from '../lib/weapons'
+  import GameIcon from './GameIcon.svelte'
 
   let { v }: { v: Viewer } = $props()
   const r = $derived(v.replay)
@@ -12,28 +18,44 @@
     return r.roundKills[round].filter((k) => k.tick <= tick && tick - k.tick < 6 * r.rate).slice(-6)
   })
 
-  const cls = (side: number) => (side === 3 ? 'ct' : 't')
+  const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+  const cls = (side: number) => (side === 3 ? 'ct' : side === 2 ? 't' : '')
+
+  // Rows with the followed player get the in game treatment: an outline
+  // for their kills, a red tint for their death.
+  function mark(k: Kill): string {
+    if (v.follow < 0) return ''
+    if (k.victim === v.follow) return 'died'
+    if (k.killer === v.follow) return 'got'
+    return ''
+  }
 </script>
 
-<div class="feed">
+<div class="feed" aria-label="Kill feed">
   {#each recent as k (k.tick * 100 + k.victim)}
-    <div class="row {cls(k.killerSide)}" class:mine={v.follow >= 0 && (k.killer === v.follow || k.victim === v.follow)}>
-      {#if k.killer >= 0}
-        <span class={cls(k.killerSide)}>{r.playerName(k.killer)}</span>
+    <div
+      class="row {mark(k)}"
+      in:fly={{ x: 18, duration: still ? 0 : 220, easing: cubicOut }}
+      out:fade={{ duration: still ? 0 : 140 }}
+      animate:flip={{ duration: still ? 0 : 180 }}
+    >
+      {#if k.killer >= 0 && k.killer !== k.victim}
+        <span class="name {cls(k.killerSide)}">{r.playerName(k.killer)}</span>
         {#if k.assister >= 0}
-          <span class="faint">+</span>
-          <span class={cls(k.killerSide)} class:flash={k.flashAssist}>{r.playerName(k.assister)}</span>
+          <span class="plus">+</span>
+          {#if k.flashAssist}<GameIcon name="kill/flash" h={15} title="Flash assist" />{/if}
+          <span class="name {cls(k.killerSide)}">{r.playerName(k.assister)}</span>
         {/if}
       {/if}
-      <span class="weapon mono">
-        {#if k.attackerBlind}<span class="tag">blind</span>{/if}
-        {weaponName(k.weapon)}
-        {#if k.wallbang}<span class="tag">wall</span>{/if}
-        {#if k.throughSmoke}<span class="tag">smoke</span>{/if}
-        {#if k.noScope}<span class="tag">noscope</span>{/if}
-        {#if k.headshot}<span class="hs">hs</span>{/if}
+      <span class="icons">
+        {#if k.attackerBlind}<GameIcon name="kill/blind" h={16} title="Killer was blind" fallback="blind" />{/if}
+        <GameIcon name={weaponIcon(k.weapon, k.killerSide)} h={17} title={weaponName(k.weapon)} fallback={weaponName(k.weapon)} />
+        {#if k.noScope}<GameIcon name="kill/noscope" h={16} title="No scope" fallback="noscope" />{/if}
+        {#if k.throughSmoke}<GameIcon name="kill/smoke" h={16} title="Through smoke" fallback="smoke" />{/if}
+        {#if k.wallbang}<GameIcon name="kill/penetrate" h={16} title="Wallbang" fallback="wall" />{/if}
+        {#if k.headshot}<GameIcon name="kill/headshot" h={16} title="Headshot" fallback="HS" />{/if}
       </span>
-      <span class={cls(k.victimSide)}>{r.playerName(k.victim)}</span>
+      <span class="name {cls(k.victimSide)}">{r.playerName(k.victim)}</span>
     </div>
   {/each}
 </div>
@@ -41,61 +63,64 @@
 <style>
   .feed {
     position: absolute;
-    top: 78px;
-    right: 14px;
+    top: 72px;
+    right: 12px;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    gap: 3px;
+    gap: 4px;
     pointer-events: none;
-    max-width: 46%;
+    max-width: calc(50% - 12px);
   }
 
   .row {
     display: flex;
     align-items: center;
     gap: 7px;
-    background: rgba(14, 16, 19, 0.86);
-    padding: 3px 9px;
-    border-radius: 2px;
-    font-weight: 500;
-    font-size: 12px;
+    height: 28px;
+    padding: 0 11px;
+    max-width: 100%;
+    background: rgba(9, 11, 14, 0.72);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 13.5px;
+    line-height: 1;
     white-space: nowrap;
-    border-left: 2px solid transparent;
+    color: var(--text);
   }
 
-  .row.ct {
-    border-left-color: var(--ct);
+  .row.got {
+    box-shadow: inset 0 0 0 1.5px var(--accent);
   }
 
-  .row.t {
-    border-left-color: var(--t);
+  .row.died {
+    background: rgba(118, 22, 28, 0.82);
   }
 
-  .row.mine {
-    box-shadow: inset 0 0 0 1px var(--marker);
+  .name {
+    min-width: 0;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: 0.01em;
   }
 
-  .weapon {
-    color: var(--graphite);
-    font-size: 11px;
+  .plus {
+    color: var(--text-2);
+    font-weight: 500;
+    margin: 0 -2px;
+  }
+
+  .icons {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-  }
-
-  .tag {
-    font-size: 9.5px;
-    color: var(--pencil);
-  }
-
-  .hs {
-    font-size: 10px;
-    color: var(--marker);
-    font-weight: 600;
-  }
-
-  .flash {
-    text-decoration: underline dotted;
+    margin: 0 2px;
+    color: #fff;
+    flex: none;
   }
 </style>
