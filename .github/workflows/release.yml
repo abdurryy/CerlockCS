@@ -1,11 +1,17 @@
 name: Release
 
-# Pushing a tag like v0.1.0 builds CerlockCS for Windows, Linux and macOS and
-# publishes a GitHub release with the files. The release notes come from the
-# tag message.
+# Builds CerlockCS for Windows, Linux and macOS and publishes a GitHub
+# release with the files. Runs when a tag like v0.1.0 is pushed, or by hand
+# from the Actions tab with the version to release. The release notes are
+# the matching section of CHANGELOG.md.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, like v0.1.0
+        required: true
 
 permissions:
   contents: write
@@ -13,6 +19,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,6 +34,19 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Release notes
+        run: |
+          if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "bad version: $VERSION" >&2
+            exit 1
+          fi
+          awk -v v="$VERSION" '/^## / { p = ($2 == v); next } p' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "CHANGELOG.md has no section for $VERSION" >&2
+            exit 1
+          fi
+          cat notes.md
+
       - name: Build the web app
         working-directory: web
         run: |
@@ -37,7 +58,7 @@ jobs:
 
       - name: Build
         run: |
-          tag="$GITHUB_REF_NAME"
+          tag="$VERSION"
           mkdir -p build dist
           for target in windows/amd64 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
             os="${target%/*}"
@@ -63,7 +84,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "CerlockCS $GITHUB_REF_NAME" \
-            --notes-from-tag \
-            --verify-tag
+          gh release create "$VERSION" dist/* \
+            --title "CerlockCS $VERSION" \
+            --notes-file notes.md \
+            --target "$GITHUB_SHA"
