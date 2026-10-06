@@ -34,6 +34,11 @@ Run "cerlock <command> -h" for the flags of a command.
 func main() {
 	log.SetFlags(log.Ltime)
 	args := os.Args[1:]
+	if len(args) == 0 {
+		// Started without arguments, most likely by double clicking the
+		// binary, so open the viewer right away.
+		args = []string{"--open"}
+	}
 	cmd := "serve"
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		cmd, args = args[0], args[1:]
@@ -64,6 +69,36 @@ func defaultDataDir() string {
 	return ".cerlock"
 }
 
+// gameReplayDirs returns the CS2 replay folders of a default Steam install,
+// so demos downloaded in game show up without any setup.
+func gameReplayDirs() []string {
+	rel := filepath.Join("steamapps", "common", "Counter-Strike Global Offensive", "game", "csgo", "replays")
+	var roots []string
+	if runtime.GOOS == "windows" {
+		for _, env := range []string{"ProgramFiles(x86)", "ProgramFiles"} {
+			if p := os.Getenv(env); p != "" {
+				roots = append(roots, filepath.Join(p, "Steam"))
+			}
+		}
+	} else if home, err := os.UserHomeDir(); err == nil {
+		roots = append(roots, filepath.Join(home, ".steam", "steam"), filepath.Join(home, ".local", "share", "Steam"))
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, r := range roots {
+		dir := filepath.Join(r, rel)
+		real, err := filepath.EvalSymlinks(dir)
+		if err != nil || seen[real] {
+			continue
+		}
+		if st, err := os.Stat(real); err == nil && st.IsDir() {
+			seen[real] = true
+			out = append(out, dir)
+		}
+	}
+	return out
+}
+
 type listFlag []string
 
 func (l *listFlag) String() string { return strings.Join(*l, ",") }
@@ -85,6 +120,9 @@ func serve(args []string) error {
 	webDir := fs.String("web", "", "serve the frontend from this folder instead of the embedded build")
 	open := fs.Bool("open", false, "open the viewer in the browser")
 	fs.Parse(args)
+	if len(demos) == 0 {
+		demos = gameReplayDirs()
+	}
 
 	cfg := server.Config{
 		Addr:           *addr,
