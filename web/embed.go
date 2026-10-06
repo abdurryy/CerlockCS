@@ -11,7 +11,7 @@ var dist embed.FS
 
 // Files returns the built app, or nil when the frontend has not been built.
 func Files() fs.FS {
-	sub, err := fs.Sub(dist, "dist")
+	sub, err := fs.Sub(dist, "dist/app")
 	if err != nil {
 		return nil
 	}
