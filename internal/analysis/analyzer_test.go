@@ -85,7 +85,7 @@ func TestClutch(t *testing.T) {
 }
 
 func TestBuyType(t *testing.T) {
-	cases := map[int]string{1000: "eco", 12000: "force", 24000: "full"}
+	cases := map[int]string{500: "eco", 2500: "force", 4800: "full"}
 	for v, want := range cases {
 		if got := buyType(v, false); got != want {
 			t.Errorf("buyType(%d) = %s, want %s", v, got, want)

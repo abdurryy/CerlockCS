@@ -300,5 +300,8 @@ func (s *Store) download(ctx context.Context, url, dst string) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
+	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
+		return err
+	}
 	return os.Rename(tmp.Name(), dst)
 }

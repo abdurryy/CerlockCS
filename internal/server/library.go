@@ -191,6 +191,7 @@ func (l *Library) Process(job *Job, r io.Reader, size int64) (*Entry, error) {
 	if err := tmp.Close(); err != nil {
 		return nil, err
 	}
+	os.Chmod(tmp.Name(), 0o644)
 	if err := os.Rename(tmp.Name(), l.replayPath(job.ID)); err != nil {
 		l.fail(job, err)
 		return nil, err
@@ -277,7 +278,8 @@ func (l *Library) Scan(dirs []string, queue bool) []LocalDemo {
 			if err != nil || d.IsDir() || !isDemoFile(d.Name()) {
 				return nil
 			}
-			info, err := d.Info()
+			// Stat follows symlinks, DirEntry.Info would describe the link.
+			info, err := os.Stat(path)
 			if err != nil {
 				return nil
 			}

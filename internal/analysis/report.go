@@ -99,7 +99,7 @@ type TeamStats struct {
 	TeamBlindTime float64    `json:"teamBlindTime"`
 	UnusedUtility int        `json:"unusedUtility"`
 	// FirstContact is the average number of seconds into the round of the
-	// first damage dealt by either team.
+	// first damage dealt by either team, -1 if the demo has no damage data.
 	FirstContact float64 `json:"firstContact"`
 }
 

@@ -104,8 +104,9 @@ func (a *analyzer) enemies(p, q int) bool {
 	return tp >= 0 && tq >= 0 && tp != tq
 }
 
-// findPistols marks the first round and the first round after the regulation
-// halftime switch.
+// findPistols marks the first round and the first round after halftime.
+// Overtime switches come later and start with full money, so only the
+// first switch counts.
 func (a *analyzer) findPistols() {
 	rs := a.m.Rounds
 	if len(rs) == 0 {
@@ -116,21 +117,21 @@ func (a *analyzer) findPistols() {
 	}
 	for i := 1; i < len(rs); i++ {
 		if rs[i].SideOf[0] != rs[i-1].SideOf[0] {
-			if rs[i].Number == 13 || rs[i].Number == 16 {
-				a.pistols[i] = true
-			}
+			a.pistols[i] = true
 			break
 		}
 	}
 }
 
-func buyType(value int, pistol bool) string {
+// buyType classifies a team buy from the average equipment value per
+// player, so it works for wingman as well as 5v5.
+func buyType(perPlayer int, pistol bool) string {
 	switch {
 	case pistol:
 		return "pistol"
-	case value < 5000:
+	case perPlayer < 1000:
 		return "eco"
-	case value < 20000:
+	case perPlayer < 4000:
 		return "force"
 	}
 	return "full"
@@ -140,13 +141,19 @@ func (a *analyzer) rounds() {
 	m := a.m
 	for ri, r := range m.Rounds {
 		info := RoundInfo{Round: ri, OpeningKill: -1, FirstContact: -1}
+		var count [2]int
 		for _, rp := range r.Players {
 			if t := a.teamOf(rp.Player); t >= 0 {
 				info.EquipValue[t] += rp.EquipValue
+				count[t]++
 			}
 		}
 		for t := 0; t < 2; t++ {
-			info.BuyType[t] = buyType(info.EquipValue[t], a.pistols[ri])
+			avg := 0
+			if count[t] > 0 {
+				avg = info.EquipValue[t] / count[t]
+			}
+			info.BuyType[t] = buyType(avg, a.pistols[ri])
 		}
 		if site, ok := a.plantRnd[ri]; ok {
 			info.Planted = true
@@ -535,6 +542,7 @@ func (a *analyzer) teams() {
 		if distN > 0 {
 			ts.AvgTeammateDistance = math.Round(distSum / float64(distN))
 		}
+		ts.FirstContact = -1
 		if contactN > 0 {
 			ts.FirstContact = round1(contactSum / float64(contactN))
 		}
