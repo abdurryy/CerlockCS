@@ -315,7 +315,7 @@ func (a *analyzer) lobbyMedian(get func(match.Engagement) float64, min float64) 
 func (a *analyzer) playerInsights(p int) {
 	m := a.m
 	st := a.r.Players[p]
-	ai := a.r.Aim[p]
+	aim := a.r.Aim[p]
 	t := a.teamOf(p)
 	name := a.name(p)
 
@@ -445,12 +445,12 @@ func (a *analyzer) playerInsights(p int) {
 
 	// Aim, compared against everyone in the same demo.
 	lobbyXhair := a.lobbyMedian(func(e match.Engagement) float64 { return e.CrosshairErrorDeg }, 0)
-	if ai.CrosshairErrorDeg > 0 && lobbyXhair > 0 && ai.CrosshairErrorDeg >= lobbyXhair*1.5 {
+	if aim.CrosshairErrorDeg > 0 && lobbyXhair > 0 && aim.CrosshairErrorDeg >= lobbyXhair*1.5 {
 		in := Insight{
 			ID: "player-crosshair", Severity: Medium, Team: t, Player: p,
 			Title: "Crosshair placement",
 			Detail: fmt.Sprintf("When an enemy appeared, %s's crosshair was %.1f° away from their head on average. The median in this game was %.1f°.",
-				name, ai.CrosshairErrorDeg, lobbyXhair),
+				name, aim.CrosshairErrorDeg, lobbyXhair),
 			Tip: "Keep the crosshair at head height on the angle an enemy will come from, so a fight needs a small adjustment instead of a flick.",
 		}
 		var list []match.Engagement
@@ -468,21 +468,21 @@ func (a *analyzer) playerInsights(p int) {
 	}
 
 	lobbyReaction := a.lobbyMedian(func(e match.Engagement) float64 { return e.ReactionMs }, 80)
-	if ai.ReactionMs > 0 && ai.ReactionSamples >= 5 && lobbyReaction > 0 && ai.ReactionMs >= lobbyReaction*1.3 {
+	if aim.ReactionMs > 0 && aim.ReactionSamples >= 5 && lobbyReaction > 0 && aim.ReactionMs >= lobbyReaction*1.3 {
 		a.add(Insight{
 			ID: "player-reaction", Severity: Low, Team: t, Player: p,
 			Title: "Slow to shoot after spotting",
 			Detail: fmt.Sprintf("%s took %.0f ms on average from spotting an enemy to the first shot. The median in this game was %.0f ms.",
-				name, ai.ReactionMs, lobbyReaction),
+				name, aim.ReactionMs, lobbyReaction),
 			Tip: "Often this is crosshair placement in disguise. A bigger flick needs more time before the shot.",
 		})
 	}
 
-	if ai.NoShotDeaths >= 5 && pct(ai.NoShotDeaths, ai.DuelsLost) >= 40 {
+	if aim.NoShotDeaths >= 5 && pct(aim.NoShotDeaths, aim.DuelsLost) >= 40 {
 		in := Insight{
 			ID: "player-no-shot", Severity: Low, Team: t, Player: p,
 			Title:  "Dying without shooting back",
-			Detail: fmt.Sprintf("In %d of %d lost duels %s did not fire a single shot.", ai.NoShotDeaths, ai.DuelsLost, name),
+			Detail: fmt.Sprintf("In %d of %d lost duels %s did not fire a single shot.", aim.NoShotDeaths, aim.DuelsLost, name),
 			Tip:    "Usually a sign of being caught from an unexpected angle or while moving between positions. Look at what the player was checking.",
 		}
 		for _, e := range m.Engagements {
