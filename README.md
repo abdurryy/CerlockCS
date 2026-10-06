@@ -2,29 +2,57 @@
 
 A fast CS2 demo viewer and review tool for teams.
 
-Drop in a demo and watch every round on a 2D radar. Follow any player around the map, see every smoke, flash and molotov, and get a list of things the team (or a single player) should work on. Every finding links to the exact moment in the demo, so you can click it and watch what happened.
+Drop in a demo and watch every round on a 2D radar. Follow any player around the map, see every smoke, flash and molotov, and get a list of things the team (or a single player) should work on. Every finding and every mistake links to the exact moment in the demo, so you can click it and watch what happened.
+
+The name is Sherlock with the "Sh" swapped for the C in CS. A demo is treated like a case: every round leaves evidence, and Cerlock lays it out for you.
 
 ![Viewer](docs/viewer.png)
 
 ## Features
 
 **Replay**
-- Players as circles with view direction, health, weapon, utility and money
+- Players drawn as small pins that point where they look, with health, weapon, utility and money
 - Smokes with a countdown ring, molotov fire, HE and flash pops, grenade trajectories, shot tracers, kill lines and the bomb
 - Lines from each flash to the players it blinded, with the blind time (red if it was a teammate)
+- Callout names on the map (Ramp, Heaven, Outside...) taken from the demo itself, and site letters where the bomb was planted
 - Follow a player by clicking them or pressing 1 to 0. Optionally rotate the map with their view
 - Team vision: only show the enemies the followed player's team could actually see
 - Ghosts: where a team stood at the same point in every other round on the same side, good for spotting setups and habits
-- Heatmaps for positions, kills and deaths, per player or per team
+- Heatmaps for positions, kills and deaths, per player, per team or for a single callout
 - Two level maps (Nuke, Train, Vertigo) switch floor automatically
+
+**Evidence (mistakes)**
+
+Cerlock goes through every round and pulls out single mistakes you can watch. Each one shows up as a numbered marker on the map and on the timeline, and clicking it jumps a few seconds before it happened and follows the player.
+
+- Team kills, team damage and dying to a teammate's flash
+- Dying while reloading or while blind from your own flash
+- Peeking into a crossfire, or staying on the same angle after a kill and getting traded
+- Dying with a lot of unused utility, or without armor on a buy round
+- The bomb carrier taking the first fight, running out of time on T side, dying to the bomb, defusing too late
+- Buying out of sync with the team, molotovs that burned for a second, shooting while running
+
+Every mistake has a cost: how much the team's chance to win the round dropped because of it. That makes it easy to sort the small stuff from what actually lost rounds.
+
+![Evidence](docs/evidence.png)
+
+**Win chance**
+- A simple model of players alive and the bomb gives a win chance for every moment of the round, drawn on the timeline
+- Round swing per player: how much each player moved their team's win chance over the match, from kills, deaths and plants
 
 **Team review**
 - Opening duels, traded deaths, rounds won after the first kill, pistols, eco and anti-eco rounds, post-plants and retakes, utility per round, team flashes and unused utility
-- Findings like "Deaths are not getting traded" or "Losing anti-eco rounds", each with the rounds and ticks it is based on
+- Findings like "Deaths are not getting traded", "Losing anti-eco rounds" or "Losing fights at Bombsite A", each with the rounds and ticks it is based on
+- Map control: kills and deaths per callout and side, where the team keeps losing fights and where it wins them, and how long it spends in each area
+- Round notes: the setup each team played, when and where the T side hit, and a short story of the round (opening kill, trades, big swings, clutches)
 
 **Player report**
-- K/D/A, ADR, KAST, HLTV 1.0 rating, opening duels, trades, isolated and early deaths, clutches, flash stats and more
-- Personal findings, for example dying where nobody can trade, flashing teammates or crosshair placement
+- K/D/A, ADR, KAST, HLTV 1.0 rating, kills and deaths per round, round swing, split by CT and T side
+- Opening duels, trades and average time to trade, isolated and early deaths, clutches, multi kills
+- Utility: flash blind time per flash, HE and molotov damage per nade, teammates flashed
+- Movement: time alive, distance travelled, shots fired while standing still, average kill distance
+- Kills per weapon and the callouts where a player gets most kills and dies the most
+- Personal findings, for example dying where nobody can trade, flashing teammates, shooting while moving or crosshair placement
 
 **Aim**
 - Every duel is cut out at full tick rate and measured: crosshair placement when the enemy showed up, reaction time to the first shot, time to damage, first shot error and flick size
@@ -43,16 +71,16 @@ Demo processing usually takes a long time in other tools, so this was the main t
 
 | Demo | Size | Parse + analysis | Replay file |
 | --- | --- | --- | --- |
-| FACEIT 5v5, Nuke, 64 tick | 299 MB | 7.1 s | 2.5 MB |
-| Matchmaking, Ancient | 39 MB | 3.0 s | 1.6 MB |
+| FACEIT 5v5, Nuke, 64 tick | 299 MB | 7.6 s | 2.6 MB |
+| Matchmaking, Ancient | 39 MB | 3.5 s | 1.7 MB |
 | Matchmaking, Anubis | 32 MB | 2.5 s | 1.2 MB |
 | Wingman, Overpass (gzipped upload) | 20 MB | 0.9 s | 0.5 MB |
 
-Opening a replay that is already parsed takes around 120 ms in the browser (about 350 ms the first time, when the map image is fetched).
+Opening a replay that is already parsed takes around 200 ms in the browser (a bit more the first time, when the map image is fetched).
 
 What makes it fast:
 
-- **One pass over the demo.** Positions, events, grenades and the aim windows are all collected in the same pass. The hot loop reads entity properties directly instead of going through helpers that look up the same entity many times, which cut parse time on the big demo from 12.3 s to 7.1 s.
+- **One pass over the demo.** Positions, events, grenades and the aim windows are all collected in the same pass. The hot loop reads entity properties directly instead of going through helpers that look up the same entity many times, which cut parse time on the big demo from 12.3 s to about 7 s.
 - **Parsing while uploading.** The server parses the upload as a stream, so the replay is ready right after the last byte arrives.
 - **No duplicate work.** A demo is identified by its size and first megabyte. The browser computes the same fingerprint, so a demo that was parsed before opens instantly without uploading anything.
 - **A replay format the browser does not need to parse.** A small JSON header plus raw typed columns (positions, angles, health...), gzipped. The browser wraps them in typed arrays without copying.
@@ -67,7 +95,7 @@ Before picking the parser I also tried demoparser2 (Rust) on the same 299 MB dem
 | --- | --- | --- |
 | Demo parsing | Go + [demoinfocs-golang](https://github.com/markus-wa/demoinfocs-golang) | Mature CS2 parser with a full game state (grenades, infernos, spotted flags, view angles), easy to run everything in one pass |
 | Server | Go standard library | One binary with the frontend embedded, nothing else to install |
-| Frontend | Svelte 5, TypeScript, Vite | Small bundle (about 47 kB gzipped) and fine grained updates |
+| Frontend | Svelte 5, TypeScript, Vite | Small bundle (about 57 kB of gzipped JS) and fine grained updates |
 | Rendering | Canvas 2D | Plenty for 10 players and a few dozen effects at 60 fps, no WebGL needed |
 | Replay format | Own binary format | Typed columns that load straight into the browser |
 
@@ -113,7 +141,8 @@ For every fight the parser keeps a short window of the attacker's view angles an
 
 - Exact line of sight from the map's collision mesh, instead of radar spotting
 - Spray control, using the recoil index and the shot pattern per weapon
-- Counter strafing, by looking at velocity at the moment of each shot
+
+Counter strafing is already in: every shot stores the player's speed, and a shot counts as "still" when the player was slow enough for the weapon to be accurate.
 
 ## Getting started
 
@@ -168,6 +197,8 @@ make test    # go vet, go test, svelte-check and vitest
 | R | Rotate the map with the followed player |
 | V | Team vision |
 | G | Ghosts |
+| E | Evidence markers |
+| C | Callouts |
 | H | Names |
 | L | Switch floor |
 
@@ -177,7 +208,7 @@ make test    # go vet, go test, svelte-check and vitest
 cmd/cerlock          CLI and server entry point
 internal/parse       single pass demo parser built on demoinfocs
 internal/aim         duel windows and aim metrics
-internal/analysis    stats and findings
+internal/analysis    stats, findings, mistakes, win chance and round notes
 internal/match       the parsed match model
 internal/replay      replay file writer
 internal/maps        overview files, radar images and the map cache
@@ -187,8 +218,17 @@ web/                 Svelte frontend
 scripts/             radar export from your own game files
 ```
 
+## Design
+
+The look is meant to feel like a case file on a dark desk instead of an esports overlay or a generic dashboard. Warm off-white text, one red for marking things, a yellow for evidence, and steel blue and ochre for the two sides. Fraunces for headings, IBM Plex Sans for text and IBM Plex Mono for numbers. The full notes are in [docs/BRAND.md](docs/BRAND.md).
+
 ## Credits
 
 - [demoinfocs-golang](https://github.com/markus-wa/demoinfocs-golang) for the demo parsing
 - Radar images and overview data belong to Valve. They are not stored in this repository
 - Test demos from the demoinfocs test set ([cs-demos-2](https://gitlab.com/markus-wa/cs-demos-2))
+- Fonts: [Fraunces](https://github.com/undercasetype/Fraunces), [IBM Plex Sans and IBM Plex Mono](https://github.com/IBM/plex), all under the SIL Open Font License, bundled through Fontsource
+
+## License
+
+MIT, see [LICENSE](LICENSE).
