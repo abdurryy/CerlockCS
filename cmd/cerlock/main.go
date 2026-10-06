@@ -79,7 +79,7 @@ func serve(args []string) error {
 	var demos listFlag
 	fs.Var(&demos, "demos", "folder with demos to list in the library (repeatable)")
 	watch := fs.Bool("watch", true, "parse new demos in the demo folders in the background")
-	offline := fs.Bool("offline", false, "never download radar images")
+	offline := fs.Bool("offline", false, "never download radar images or icons")
 	workers := fs.Int("workers", max(1, runtime.NumCPU()/2), "demos parsed at the same time")
 	sample := fs.Int("sample", 2, "ticks between stored frames")
 	webDir := fs.String("web", "", "serve the frontend from this folder instead of the embedded build")

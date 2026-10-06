@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/abdurryy/CerlockCS/internal/icons"
 	"github.com/abdurryy/CerlockCS/internal/maps"
 	"github.com/abdurryy/CerlockCS/internal/pipeline"
 )
@@ -35,9 +36,10 @@ type Config struct {
 }
 
 type Server struct {
-	cfg  Config
-	lib  *Library
-	maps *maps.Store
+	cfg   Config
+	lib   *Library
+	maps  *maps.Store
+	icons *icons.Store
 }
 
 func New(cfg Config) (*Server, error) {
@@ -50,7 +52,9 @@ func New(cfg Config) (*Server, error) {
 	}
 	ms := maps.NewStore(filepath.Join(cfg.DataDir, "maps"))
 	ms.Offline = cfg.Offline
-	return &Server{cfg: cfg, lib: lib, maps: ms}, nil
+	is := icons.NewStore(filepath.Join(cfg.DataDir, "icons"))
+	is.Offline = cfg.Offline
+	return &Server{cfg: cfg, lib: lib, maps: ms, icons: is}, nil
 }
 
 var validID = regexp.MustCompile(`^[0-9a-f]{20}$`)
@@ -65,6 +69,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/library", s.library)
 	mux.HandleFunc("POST /api/library/parse", s.parseLocal)
 	mux.HandleFunc("GET /api/maps/{name}", s.mapInfo)
+	mux.HandleFunc("GET /api/icons", s.iconList)
+	mux.HandleFunc("GET /api/icons/{group}/{file}", s.icon)
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	})
@@ -81,6 +87,8 @@ func (s *Server) Run(ctx context.Context) error {
 	if s.cfg.Watch && len(s.cfg.DemoDirs) > 0 {
 		go s.watch(ctx)
 	}
+	// Fetch missing icons right away so the first replay has them.
+	go s.icons.Available()
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -256,6 +264,31 @@ func (s *Server) mapInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, info)
+}
+
+func (s *Server) iconList(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-cache")
+	writeJSON(w, http.StatusOK, map[string]any{"icons": s.icons.Available()})
+}
+
+func (s *Server) icon(w http.ResponseWriter, r *http.Request) {
+	name, ok := strings.CutSuffix(r.PathValue("group")+"/"+r.PathValue("file"), ".svg")
+	p, valid := s.icons.Path(name)
+	if !ok || !valid {
+		http.NotFound(w, r)
+		return
+	}
+	b, err := os.ReadFile(p)
+	if err != nil || icons.Check(b) != nil {
+		http.NotFound(w, r)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", "image/svg+xml")
+	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Cache-Control", "public, max-age=604800")
+	w.Write(b)
 }
 
 // static serves the single page app and falls back to index.html for client

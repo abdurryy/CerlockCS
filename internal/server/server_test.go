@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -89,5 +91,31 @@ func TestMapInfoOffline(t *testing.T) {
 	rec := do(h, "GET", "/api/maps/de_mirage", "")
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"scale":5`) {
 		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestIcons(t *testing.T) {
+	s, h := newTestServer(t)
+	dir := filepath.Join(s.cfg.DataDir, "icons", "weapon")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "ak47.svg"), []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`), 0o644)
+	os.WriteFile(filepath.Join(dir, "awp.svg"), []byte(`<svg><script>x()</script></svg>`), 0o644)
+
+	rec := do(h, "GET", "/api/icons", "")
+	var body struct {
+		Icons map[string]float64 `json:"icons"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || len(body.Icons) != 1 {
+		t.Fatalf("list %s", rec.Body.String())
+	}
+
+	rec = do(h, "GET", "/api/icons/weapon/ak47.svg", "")
+	if rec.Code != 200 || rec.Header().Get("Content-Type") != "image/svg+xml" || rec.Header().Get("Content-Security-Policy") == "" {
+		t.Fatalf("icon %d %v", rec.Code, rec.Header())
+	}
+	for _, url := range []string{"/api/icons/weapon/awp.svg", "/api/icons/weapon/ak47", "/api/icons/other/ak47.svg", "/api/icons/weapon/..%2Fx.svg"} {
+		if rec := do(h, "GET", url, ""); rec.Code != 404 {
+			t.Errorf("%s: status %d", url, rec.Code)
+		}
 	}
 }
