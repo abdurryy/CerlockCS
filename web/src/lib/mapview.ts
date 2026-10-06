@@ -1,6 +1,9 @@
 import { mapInfo } from './api'
+import { makePlate } from './render/plate'
 import { FLAG, type Replay } from './replay'
 import type { MapInfo, MapLevel } from './types'
+
+export { PLATE_PAD } from './render/plate'
 
 const SIZE = 1024
 
@@ -10,12 +13,12 @@ export interface Layer {
   // no image is available.
   image: CanvasImageSource | null
   generated: boolean
-  // plate is the image colour graded and lifted with a shadow, PLATE_PAD
-  // pixels bigger on every side.
+  // plate is the image graded and lifted with a shadow, PLATE_PAD pixels
+  // bigger on every side.
   plate: HTMLCanvasElement | null
+  // outline is the edge of the playable area in radar pixels.
+  outline: Path2D | null
 }
-
-export const PLATE_PAD = 64
 
 // Callout is a map area name placed where players stood while in it.
 export interface Callout {
@@ -68,7 +71,7 @@ export class MapView {
       }
     }
     const layers: Layer[] = await Promise.all(
-      info.levels.map(async (level) => ({ level, image: await loadImage(level.image), generated: false, plate: null })),
+      info.levels.map(async (level) => ({ level, image: await loadImage(level.image), generated: false, plate: null, outline: null })),
     )
     const view = new MapView(info, layers)
     if (!info.known) view.fitToPlayers(replay)
@@ -78,7 +81,9 @@ export class MapView {
         layer.image = view.floorPlan(replay, layer.level)
         layer.generated = true
       }
-      layer.plate = makePlate(layer.image, layer.generated)
+      const plate = makePlate(layer.image)
+      layer.plate = plate.canvas
+      layer.outline = plate.outline
     }
     view.findCallouts(replay)
     view.findSites(replay)
@@ -212,12 +217,14 @@ export class MapView {
     this.posY = (minY + maxY) / 2 + span / 2
   }
 
-  // floorPlan draws the parts of the map players stood on. It is a decent
-  // stand in when the radar image is missing (offline, custom maps).
+  // floorPlan draws the parts of the map players stood on, lighter where
+  // they stood higher. It is a decent stand in when the radar image is
+  // missing (offline, custom maps).
   private floorPlan(r: Replay, level: MapLevel): HTMLCanvasElement {
     const G = 256
     const cell = SIZE / G
-    const grid = new Uint8Array(G * G)
+    const zsum = new Float32Array(G * G)
+    const count = new Uint32Array(G * G)
     const F = r.frames
     for (let p = 0; p < r.players; p++) {
       for (let f = 0; f < F; f += 2) {
@@ -228,49 +235,49 @@ export class MapView {
         const [px, py] = this.toRadar(r.px[i], r.py[i])
         const gx = Math.floor(px / cell)
         const gy = Math.floor(py / cell)
-        if (gx >= 0 && gy >= 0 && gx < G && gy < G) grid[gy * G + gx] = 1
+        if (gx < 0 || gy < 0 || gx >= G || gy >= G) continue
+        zsum[gy * G + gx] += z
+        count[gy * G + gx]++
       }
     }
-    // Grow the walked cells a little so corridors get their real width.
-    const grown = new Uint8Array(G * G)
+    // Grow the walked cells a little so corridors get their real width,
+    // taking the height of the cells they grew from.
+    const gz = new Float32Array(G * G)
+    const gn = new Uint32Array(G * G)
     const R = 2
+    let zmin = Infinity
+    let zmax = -Infinity
     for (let y = 0; y < G; y++) {
       for (let x = 0; x < G; x++) {
-        if (!grid[y * G + x]) continue
+        const k = y * G + x
+        if (!count[k]) continue
+        const z = zsum[k] / count[k]
+        zmin = Math.min(zmin, z)
+        zmax = Math.max(zmax, z)
         for (let dy = -R; dy <= R; dy++) {
           for (let dx = -R; dx <= R; dx++) {
             const nx = x + dx
             const ny = y + dy
-            if (nx >= 0 && ny >= 0 && nx < G && ny < G && dx * dx + dy * dy <= R * R + 1) grown[ny * G + nx] = 1
+            if (nx < 0 || ny < 0 || nx >= G || ny >= G || dx * dx + dy * dy > R * R + 1) continue
+            gz[ny * G + nx] += z
+            gn[ny * G + nx]++
           }
         }
       }
     }
+    const span = Math.max(1, zmax - zmin)
     const small = document.createElement('canvas')
     small.width = G
     small.height = G
     const sctx = small.getContext('2d')!
     const img = sctx.createImageData(G, G)
-    for (let y = 0; y < G; y++) {
-      for (let x = 0; x < G; x++) {
-        const k = y * G + x
-        if (!grown[k]) continue
-        const edge =
-          x === 0 || y === 0 || x === G - 1 || y === G - 1 ||
-          !grown[k - 1] || !grown[k + 1] || !grown[k - G] || !grown[k + G]
-        const o = k * 4
-        if (edge) {
-          img.data[o] = 120
-          img.data[o + 1] = 138
-          img.data[o + 2] = 160
-          img.data[o + 3] = 255
-        } else {
-          img.data[o] = 44
-          img.data[o + 1] = 53
-          img.data[o + 2] = 66
-          img.data[o + 3] = 255
-        }
-      }
+    for (let k = 0; k < G * G; k++) {
+      if (!gn[k]) continue
+      const v = 70 + 130 * ((gz[k] / gn[k] - zmin) / span)
+      img.data[k * 4] = v
+      img.data[k * 4 + 1] = v
+      img.data[k * 4 + 2] = v
+      img.data[k * 4 + 3] = 255
     }
     sctx.putImageData(img, 0, 0)
     const out = document.createElement('canvas')
@@ -278,7 +285,10 @@ export class MapView {
     out.height = SIZE
     const ctx = out.getContext('2d')!
     ctx.imageSmoothingEnabled = true
+    // Soften the cell steps so the traced outline comes out smooth.
+    ctx.filter = 'blur(3px)'
     ctx.drawImage(small, 0, 0, SIZE, SIZE)
+    ctx.filter = 'none'
     return out
   }
 }
@@ -293,33 +303,4 @@ async function loadImage(src: string): Promise<HTMLImageElement | null> {
   } catch {
     return null
   }
-}
-
-// makePlate colour grades the radar to sit in the palette and gives it a
-// soft shadow so it reads as a sheet lying on the desk.
-function makePlate(image: CanvasImageSource, generated: boolean): HTMLCanvasElement {
-  const graded = document.createElement('canvas')
-  graded.width = SIZE
-  graded.height = SIZE
-  const g = graded.getContext('2d')!
-  if (!generated) g.filter = 'saturate(0.72) contrast(1.06) brightness(0.9) sepia(0.14)'
-  g.drawImage(image, 0, 0, SIZE, SIZE)
-
-  const plate = document.createElement('canvas')
-  plate.width = SIZE + PLATE_PAD * 2
-  plate.height = SIZE + PLATE_PAD * 2
-  const ctx = plate.getContext('2d')!
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.75)'
-  ctx.shadowBlur = 30
-  ctx.shadowOffsetY = 8
-  ctx.drawImage(graded, PLATE_PAD, PLATE_PAD)
-  ctx.shadowColor = 'transparent'
-  // A faint warm rim light on the top edges.
-  ctx.globalCompositeOperation = 'source-atop'
-  const rim = ctx.createLinearGradient(0, 0, 0, plate.height)
-  rim.addColorStop(0, 'rgba(255, 236, 200, 0.06)')
-  rim.addColorStop(1, 'rgba(0, 0, 0, 0.12)')
-  ctx.fillStyle = rim
-  ctx.fillRect(0, 0, plate.width, plate.height)
-  return plate
 }

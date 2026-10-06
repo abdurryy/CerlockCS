@@ -16,14 +16,16 @@ export interface HeatConfig {
 const G = 256
 const CELL = 1024 / G
 
-// Colour ramp from faint paper through ochre to marker red.
+// Colour ramp from a faint plum through brand red and orange to pale
+// yellow, warm so it stands out on the cool map.
 const RAMP: [number, number, number, number][] = [
   [0, 0, 0, 0],
-  [236, 230, 218, 0.18],
-  [242, 193, 78, 0.45],
-  [221, 140, 60, 0.65],
-  [229, 72, 77, 0.8],
-  [255, 235, 230, 0.95],
+  [150, 40, 110, 0.2],
+  [220, 55, 90, 0.46],
+  [245, 85, 70, 0.64],
+  [255, 160, 70, 0.8],
+  [255, 225, 130, 0.9],
+  [255, 250, 230, 0.96],
 ]
 
 function ramp(v: number): [number, number, number, number] {
@@ -91,8 +93,12 @@ export function buildHeatmap(r: Replay, map: MapView, cfg: HeatConfig): HTMLCanv
     }
   }
 
-  let max = 0
-  for (const v of grid) if (v > max) max = v
+  // Scale to a high percentile rather than the peak, one crowded spot
+  // (a spawn, a common hold) would wash out everything else.
+  const used: number[] = []
+  for (const v of grid) if (v > 0) used.push(v)
+  used.sort((a, b) => a - b)
+  const max = used.length ? used[Math.min(used.length - 1, Math.floor(used.length * 0.993))] : 0
   const small = document.createElement('canvas')
   small.width = G
   small.height = G
