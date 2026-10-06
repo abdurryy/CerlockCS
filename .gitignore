@@ -1,0 +1,10 @@
+/bin/
+/web/node_modules/
+/web/dist/*
+!/web/dist/.gitkeep
+*.dem
+*.dem.gz
+*.dem.bz2
+*.dem.zst
+*.crlk.gz
+.DS_Store
