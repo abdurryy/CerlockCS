@@ -144,14 +144,25 @@ For every fight the parser keeps a short window of the attacker's view angles an
 
 Counter strafing is already in: every shot stores the player's speed, and a shot counts as "still" when the player was slow enough for the weapon to be accurate.
 
+## Scouting a team
+
+Teams in ESEA often have few league games to look at, but their players queue FACEIT matchmaking together to practice. Cerlock finds those games and turns them into heatmaps per map: where every player stands, where they set up early in CT rounds and which sites they hit on T side with what utility.
+
+1. Create a FACEIT API key: sign in at [developers.faceit.com](https://developers.faceit.com), make an app and add a server side API key. Paste it into Cerlock's settings. It is saved in `settings.json` in the data folder, readable only by your user, and never sent back to the browser.
+2. Paste the opponent's match room link (`https://www.faceit.com/en/cs2/room/1-...`) or their team page. Cerlock lists both teams with their players.
+3. Cerlock walks the last 100 matches of every player and keeps the ones where at least four of them were on the same side, newest first, with the map, the score and a link to the match room.
+4. Get the demos. Downloading demos through the API needs an extra permission from FACEIT that a normal key does not have, so download them from the match rooms and drop them into Cerlock. They are matched to the players by SteamID. If your key does have download access, Cerlock downloads them itself into `demos/faceit` in the data folder.
+
+The key can also be given with `--faceit-key` or the `FACEIT_API_KEY` environment variable. A key saved in the settings wins.
+
 ## Download
 
 Get the latest version from the [releases page](https://github.com/abdurryy/CerlockCS/releases).
 
-- **Windows**: download `cerlock-<version>-windows-amd64.exe` and double click it. The viewer opens in your browser and demos in your CS2 replays folder show up by themselves. The exe is not signed, so Windows may say it is from an unknown publisher. Click "More info" and then "Run anyway".
+- **Windows**: download `cerlock-<version>-windows-amd64.exe` and double click it. Cerlock opens as its own app window, and demos in your CS2 replays folder show up by themselves. To keep it handy, right click its icon on the taskbar and pick "Pin to taskbar". Closing the window quits Cerlock. The window uses the Microsoft Edge WebView2 Runtime, which most Windows 10 and 11 PCs already have. If yours does not, Cerlock opens in your browser instead and shows where to get it. The exe is not signed, so Windows may say it is from an unknown publisher. Click "More info" and then "Run anyway". Commands like `cerlock serve` and `cerlock parse` still work from a terminal.
 - **Linux and macOS**: download the `.tar.gz` for your system, extract it and run `./cerlock`.
 
-Everything is one file. Replays, radar images and icons are stored in `.cerlock` in your home folder.
+Everything is one file. Replays, radar images and icons are stored in `.cerlock` in your home folder. On Windows the app also keeps its log there, in `cerlock.log`.
 
 ## Building from source
 
@@ -173,11 +184,12 @@ Then drop a demo on the page. The CS2 replays folder of a default Steam install 
 Other options:
 
 ```
---addr      address to listen on (default 127.0.0.1:7350)
---data      where replays and map images are stored (default ~/.cerlock)
---demos     folder with demos, can be given more than once
---offline   never download radar images or icons
---workers   demos parsed at the same time
+--addr        address to listen on (default 127.0.0.1:7350)
+--data        where replays and map images are stored (default ~/.cerlock)
+--demos       folder with demos, can be given more than once
+--offline     never download radar images or icons
+--workers     demos parsed at the same time
+--faceit-key  FACEIT Data API key for scouting (FACEIT_API_KEY works too)
 ```
 
 There is also a CLI mode that only parses, handy for benchmarking:
@@ -222,6 +234,7 @@ internal/match       the parsed match model
 internal/replay      replay file writer
 internal/maps        overview files, radar images and the map cache
 internal/pipeline    decompress, parse, analyse, write
+internal/faceit      FACEIT API client and the search for games played together
 internal/server      HTTP API, library and background parsing
 web/                 Svelte frontend
 scripts/             radar export from your own game files
