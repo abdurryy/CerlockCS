@@ -34,6 +34,10 @@ Run "cerlock <command> -h" for the flags of a command.
 func main() {
 	log.SetFlags(log.Ltime)
 	args := os.Args[1:]
+	if len(args) == 0 && openApp() {
+		return
+	}
+	attachConsole()
 	if len(args) == 0 {
 		// Started without arguments, most likely by double clicking the
 		// binary, so open the viewer right away.
@@ -46,7 +50,7 @@ func main() {
 	var err error
 	switch cmd {
 	case "serve":
-		err = serve(args)
+		err = serve(context.Background(), args)
 	case "parse":
 		err = parseCmd(args)
 	case "version":
@@ -67,6 +71,20 @@ func defaultDataDir() string {
 		return filepath.Join(home, ".cerlock")
 	}
 	return ".cerlock"
+}
+
+// downloadsDir returns the user's Downloads folder if it exists. FACEIT
+// demos downloaded from a match room land there.
+func downloadsDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	dir := filepath.Join(home, "Downloads")
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		return ""
+	}
+	return dir
 }
 
 // gameReplayDirs returns the CS2 replay folders of a default Steam install,
@@ -107,7 +125,7 @@ func (l *listFlag) Set(v string) error {
 	return nil
 }
 
-func serve(args []string) error {
+func serve(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	addr := fs.String("addr", "127.0.0.1:7350", "address to listen on")
 	data := fs.String("data", defaultDataDir(), "where replays and map images are stored")
@@ -119,7 +137,12 @@ func serve(args []string) error {
 	sample := fs.Int("sample", 2, "ticks between stored frames")
 	webDir := fs.String("web", "", "serve the frontend from this folder instead of the embedded build")
 	open := fs.Bool("open", false, "open the viewer in the browser")
+	faceitKey := fs.String("faceit-key", "", "FACEIT Data API key for scouting (or set FACEIT_API_KEY), a key saved in the app wins")
+	downloads := fs.Bool("downloads", true, "pick up FACEIT demos saved in the Downloads folder")
 	fs.Parse(args)
+	if *faceitKey == "" {
+		*faceitKey = os.Getenv("FACEIT_API_KEY")
+	}
 	if len(demos) == 0 {
 		demos = gameReplayDirs()
 	}
@@ -133,6 +156,10 @@ func serve(args []string) error {
 		Workers:        *workers,
 		SampleInterval: *sample,
 		Static:         web.Files(),
+		FaceitKey:      strings.TrimSpace(*faceitKey),
+	}
+	if *downloads {
+		cfg.DownloadsDir = downloadsDir()
 	}
 	if *webDir != "" {
 		cfg.Static = os.DirFS(*webDir)
@@ -141,7 +168,7 @@ func serve(args []string) error {
 	if err != nil {
 		return err
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 	defer stop()
 
 	url := "http://" + *addr

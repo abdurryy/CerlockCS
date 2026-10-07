@@ -6,4 +6,6 @@
 *.dem.bz2
 *.dem.zst
 *.crlk.gz
+# Windows resources, made by go-winres in the release workflow
+*.syso
 .DS_Store

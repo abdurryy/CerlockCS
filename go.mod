@@ -4,12 +4,15 @@ go 1.25
 
 require (
 	github.com/golang/geo v0.0.0-20260928092222-7d12f68cfadb
+	github.com/jchv/go-webview2 v0.0.0-20260205173254-56598839c808
 	github.com/klauspost/compress v1.20.1
 	github.com/markus-wa/demoinfocs-golang/v5 v5.2.0
+	golang.org/x/sys v0.11.0
 )
 
 require (
 	github.com/golang/snappy v1.0.0 // indirect
+	github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1 // indirect
 	github.com/markus-wa/go-unassert v0.1.3 // indirect
 	github.com/markus-wa/gobitread v0.2.5-0.20241202000432-3c3e0bc797c6 // indirect
 	github.com/markus-wa/godispatch v1.4.1 // indirect
