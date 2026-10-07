@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or help
+    url: https://github.com/abdurryy/CerlockCS/discussions/categories/q-a
+    about: Ask how something works or get help getting Cerlock running.
+  - name: Ideas and feedback
+    url: https://github.com/abdurryy/CerlockCS/discussions
+    about: Talk about an idea before it becomes an issue, or share how your team uses Cerlock.

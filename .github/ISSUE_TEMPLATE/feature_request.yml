@@ -1,0 +1,39 @@
+name: Feature request
+description: An idea for something Cerlock should do
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the [roadmap](https://github.com/abdurryy/CerlockCS#roadmap) and the open issues first, it might be there already. Not sure yet? Start in [Ideas](https://github.com/abdurryy/CerlockCS/discussions/categories/ideas).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What do you want to do?
+      description: The situation, in CS terms.
+      placeholder: When we prepare for an opponent I want to see what they buy after they lose the pistol round.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How could Cerlock help?
+      description: What you would like to see. A sketch or a screenshot from another tool is fine.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Part of the app
+      options:
+        - Replay and radar
+        - Evidence (mistakes)
+        - Team or player report
+        - Aim
+        - Scouting
+        - Library and importing demos
+        - Something else
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Building it
+      options:
+        - label: I would like to work on this myself

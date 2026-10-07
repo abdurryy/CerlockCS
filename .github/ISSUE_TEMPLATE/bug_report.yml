@@ -1,0 +1,70 @@
+name: Bug report
+description: Something is broken, crashes or looks wrong
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting it. The more of this you fill in, the faster it gets fixed.
+  - type: input
+    id: version
+    attributes:
+      label: Cerlock version
+      description: It is in the name of the file you downloaded (like `cerlock-v0.2.0-windows-amd64.exe`), or run `cerlock version` in a terminal. Write the commit if you built it yourself.
+      placeholder: v0.2.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: Where is the demo from?
+      options:
+        - Valve matchmaking or Premier
+        - Wingman
+        - FACEIT
+        - HLTV or another pro event
+        - Somewhere else (say where below)
+        - It is not about one demo
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the demo
+        2. Go to round 7
+        3. Follow player 3 and turn on team vision
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: And what you expected instead. Screenshots help a lot.
+    validations:
+      required: true
+  - type: input
+    id: demo
+    attributes:
+      label: Link to the demo
+      description: If you can share it. A FACEIT room, a Google Drive or Dropbox link, anything works. Most bugs are much easier to fix with the demo.
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: Anything from the terminal. On Windows the app writes `cerlock.log` in the `.cerlock` folder in your home folder.
+      render: text
