@@ -131,6 +131,12 @@
       <a class="brand" href="#/" aria-label="Cerlock, case files"><Logo size={30} full /></a>
       <span class="tag">CS2 demo review</span>
       <span class="spacer"></span>
+      <a class="scout" href="#/scout" title="Heatmaps and habits of a team over all their demos">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 11a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM2.5 20c.5-3.6 3-5.5 6.5-5.5s6 1.9 6.5 5.5M16 4.3a3.5 3.5 0 010 6.4M18.5 14.8c1.8.7 2.8 2.4 3 5.2" />
+        </svg>
+        <span>Scout a team</span>
+      </a>
       <button class="primary" onclick={pick} disabled={!!busy}>
         <Icon name="upload" size={15} />
         <span>Open a demo</span>
@@ -206,6 +212,7 @@
               {#if job.status === 'error'}
                 <span class="bad small">{job.error}</span>
               {:else}
+                <span class="dim small jstate">{job.status === 'downloading' ? 'Downloading' : job.status === 'queued' ? 'Queued' : 'Reading'}</span>
                 <span class="progress">
                   <span class="bar"><i style="width: {pct(job.progress)}%"></i></span>
                   <span class="num pct">{pct(job.progress)}%</span>
@@ -382,6 +389,29 @@
 
   .spacer {
     flex: 1;
+  }
+
+  .scout {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 34px;
+    padding: 0 14px 0 12px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    color: var(--text);
+    font-family: var(--display);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-decoration: none;
+    transition: background 0.12s, border-color 0.12s;
+  }
+
+  .scout:hover {
+    background: var(--surface-3);
+    border-color: #414a55;
   }
 
   .primary {
@@ -884,26 +914,28 @@
     color: var(--text-3);
   }
 
+  /* Names in one column, scores right next to the longest name. */
   .match {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
+    display: grid;
+    grid-template-columns: minmax(0, max-content) auto;
+    justify-content: start;
+    align-items: baseline;
+    column-gap: 12px;
+    row-gap: 2px;
     min-width: 0;
-    max-width: 250px;
   }
 
   .side {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
+    display: contents;
     color: var(--text-2);
   }
 
   .tname {
+    min-width: 0;
     font-family: var(--display);
     font-size: 14px;
     font-weight: 600;
+    color: var(--text-2);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -914,6 +946,7 @@
     font-size: 15px;
     font-weight: 700;
     color: var(--text-2);
+    text-align: right;
   }
 
   .side.won .tname,
@@ -1019,6 +1052,11 @@
   .job .progress {
     width: 240px;
     margin: 0;
+  }
+
+  .jstate {
+    font-family: var(--display);
+    font-weight: 600;
   }
 
   /* Watched folders */
@@ -1193,6 +1231,14 @@
 
     .tag {
       display: none;
+    }
+
+    .scout span {
+      display: none;
+    }
+
+    .scout {
+      padding: 0 9px;
     }
 
     h1 {

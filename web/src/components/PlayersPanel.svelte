@@ -6,8 +6,9 @@
   import { weaponName } from '../lib/weapons'
   import GameIcon from './GameIcon.svelte'
   import InsightCard from './InsightCard.svelte'
+  import ScoutIcon from './ScoutIcon.svelte'
 
-  let { v }: { v: Viewer } = $props()
+  let { v, onexport }: { v: Viewer; onexport?: () => void } = $props()
   const r = $derived(v.replay)
   const report = $derived(r.report)
 
@@ -105,6 +106,15 @@
 </script>
 
 <div class="players">
+  {#if onexport}
+    <div class="tools">
+      <span class="label">Scoreboard</span>
+      <button class="export" title="Heatmaps of each player as PNG" onclick={onexport}>
+        <ScoutIcon name="image" size={14} />
+        <span>Export heatmaps</span>
+      </button>
+    </div>
+  {/if}
   <table class="board">
     <thead>
       <tr>
@@ -336,6 +346,30 @@
 <style>
   .players {
     padding: 8px 14px 24px;
+  }
+
+  .tools {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 2px 0 6px 2px;
+  }
+
+  .export {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px 0 8px;
+    color: var(--text-2);
+    font-family: var(--display);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .export:hover {
+    color: var(--text);
   }
 
   /* Scoreboard. */

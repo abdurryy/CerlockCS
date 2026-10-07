@@ -429,6 +429,8 @@ export interface Entry {
   teams: [{ name: string; score: number }, { name: string; score: number }]
   rounds: number
   players: string[]
+  // SteamID64 of each player, in the same order as players. Bots are "0".
+  steamIds?: string[]
   duration: number
   demoSize: number
   parseMs: number
@@ -456,3 +458,73 @@ export interface LocalDemo {
   progress: number
   error?: string
 }
+
+export interface Settings {
+  faceitKey: boolean
+  // The last characters of the key, like "...3f9a".
+  faceitKeyHint: string
+}
+
+// Scouting through the FACEIT Data API, see internal/faceit.
+
+export interface ScoutPlayer {
+  faceitId: string
+  nickname: string
+  steamId: string
+  avatar: string
+}
+
+export interface ScoutTeam {
+  id: string
+  name: string
+  avatar: string
+  players: ScoutPlayer[]
+}
+
+// ScoutLookup is a match room (two teams) or a team page (one team, no
+// match id).
+export interface ScoutLookup {
+  matchId: string
+  map: string
+  startedAt: number
+  competition: string
+  teams: ScoutTeam[]
+}
+
+export type MatchKind = 'league' | 'matchmaking' | 'other'
+
+export interface FoundMatch {
+  matchId: string
+  url: string
+  map: string
+  startedAt: number
+  competition: string
+  kind: MatchKind
+  won: boolean | null
+  // Our score first, like "13 - 9", or "" when unknown.
+  score: string
+  players: string[]
+  opponent: string
+  demo: boolean
+  // The library entry made from this match's demo, or "".
+  replayId: string
+}
+
+export interface MapCount {
+  map: string
+  played: number
+  won: number
+}
+
+export interface FindResult {
+  matches: FoundMatch[]
+  maps: MapCount[]
+}
+
+export interface DownloadResult {
+  queued: string[]
+  failed: { matchId: string; error: string }[]
+  downloadsAllowed: boolean
+}
+
+export type ApiErrorCode = 'no_key' | 'bad_key' | 'not_found' | 'rate_limited' | 'downloads_not_allowed' | 'faceit_unreachable' | 'bad_request'

@@ -1137,7 +1137,8 @@ export function compose(c: Card, cx: Context, st: Stage, S: number, logoImg: HTM
   drawLabels(ctx, st, c.level, v, u, rects.taken, rects.plants, l.hits.length + l.marks.length > 40)
   drawUtility(ctx, c, l, st.info, v, u)
   drawHits(ctx, l, u)
-  drawHeader(ctx, c, S, u, logoImg)
+  // Nuke, Train and Vertigo images say which floor they show.
+  drawHeader(ctx, { ...c, bits: c.floor ? [...c.bits, c.floor] : c.bits }, S, u, logoImg)
   const legendLeft = drawLegend(ctx, c, S, u)
   drawStats(ctx, c.footer, S, u, legendLeft - 48 * u)
   drawFooterLine(ctx, cx, S, u)

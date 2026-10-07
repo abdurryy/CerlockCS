@@ -4,6 +4,7 @@
   import BallisticsPanel from './BallisticsPanel.svelte'
   import BriefingPanel from './BriefingPanel.svelte'
   import EvidencePanel from './EvidencePanel.svelte'
+  import ExportHeatmaps from './ExportHeatmaps.svelte'
   import Hud from './Hud.svelte'
   import Icon from './Icon.svelte'
   import KillFeed from './KillFeed.svelte'
@@ -12,6 +13,7 @@
   import PlayersPanel from './PlayersPanel.svelte'
   import Radar from './Radar.svelte'
   import RoundsPanel from './RoundsPanel.svelte'
+  import ScoutIcon from './ScoutIcon.svelte'
   import TeamPanel from './TeamPanel.svelte'
   import Timeline from './Timeline.svelte'
   import Toolbar from './Toolbar.svelte'
@@ -21,6 +23,17 @@
   let radar: ReturnType<typeof Radar> | undefined = $state()
   let help = $state(false)
   let dialog: HTMLDivElement | undefined = $state()
+  // The team the heatmap export opens on, -1 while it is closed.
+  let exportTeam = $state(-1)
+
+  // The export starts on the team of the player being looked at.
+  function openExport() {
+    const p = v.inspect >= 0 ? v.inspect : v.follow
+    const t = r.match.players[p]?.team
+    help = false
+    v.playing = false
+    exportTeam = t === 0 || t === 1 ? t : 0
+  }
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'briefing', label: 'Briefing' },
@@ -88,6 +101,7 @@
   }
 
   function onKey(e: KeyboardEvent) {
+    if (exportTeam >= 0) return
     const target = e.target as HTMLElement
     if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') return
     if (e.ctrlKey || e.metaKey || e.altKey) return
@@ -151,7 +165,7 @@
   </svg>
 {/snippet}
 
-<div class="view">
+<div class="view" class:exporting={exportTeam >= 0}>
   <header>
     <a class="home" href="#/" title="Back to case files"><Logo size={26} /></a>
     <span class="sep"></span>
@@ -167,6 +181,10 @@
       <span class="team {sideClass(sides[1])}" title={r.teamName(1)}>{r.teamName(1)}</span>
     </div>
     <span class="spacer"></span>
+    <button class="export" title="Export heatmaps of a team as PNG" onclick={openExport}>
+      <ScoutIcon name="image" size={15} />
+      <span>Export heatmaps</span>
+    </button>
     <span class="facts">
       <span><b class="num">{r.match.rounds.length}</b> rounds</span>
     </span>
@@ -245,7 +263,7 @@
       {:else if v.tab === 'evidence'}
         <EvidencePanel {v} />
       {:else if v.tab === 'players'}
-        <PlayersPanel {v} />
+        <PlayersPanel {v} onexport={openExport} />
       {:else if v.tab === 'ballistics'}
         <BallisticsPanel {v} />
       {:else if v.tab === 'rounds'}
@@ -260,6 +278,10 @@
     <Timeline {v} />
   </footer>
 </div>
+
+{#if exportTeam >= 0}
+  <ExportHeatmaps replay={r} team={exportTeam} onclose={() => (exportTeam = -1)} />
+{/if}
 
 <style>
   .view {
@@ -403,6 +425,23 @@
     color: var(--text-2);
   }
 
+  .export {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 30px;
+    padding: 0 12px 0 10px;
+    flex: none;
+    color: var(--text-2);
+    font-family: var(--display);
+    font-size: 13.5px;
+    font-weight: 600;
+  }
+
+  .export:hover {
+    color: var(--text);
+  }
+
   .keys {
     width: 32px;
     height: 32px;
@@ -426,6 +465,11 @@
     overflow-y: auto;
     border-right: 1px solid var(--line);
     background: var(--surface);
+  }
+
+  /* The map stops drawing while heatmaps are exported, they need the CPU. */
+  .exporting .stage {
+    display: none;
   }
 
   .stage {
@@ -452,10 +496,14 @@
     flex: none;
   }
 
+  /* Same side padding as the panel below, so the first and last tab line
+     up with its content. */
   .tabs {
     display: flex;
+    justify-content: space-between;
+    gap: 6px;
     height: 42px;
-    padding: 0 6px;
+    padding: 0 16px;
     border-bottom: 1px solid var(--line);
     overflow-x: auto;
     scrollbar-width: none;
@@ -463,13 +511,13 @@
 
   .tab {
     position: relative;
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 5px;
     height: 100%;
-    padding: 0 7px;
+    padding: 0;
     border: none;
     border-radius: 0;
     background: transparent;
@@ -485,8 +533,8 @@
   .tab::after {
     content: '';
     position: absolute;
-    left: 6px;
-    right: 6px;
+    left: 0;
+    right: 0;
     bottom: -1px;
     height: 2px;
     border-radius: 2px 2px 0 0;
@@ -512,16 +560,16 @@
   }
 
   .count {
-    min-width: 18px;
-    height: 16px;
-    padding: 0 4px;
+    min-width: 16px;
+    height: 15px;
+    padding: 0 3px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     border-radius: 3px;
     background: var(--evidence);
     color: #1a1406;
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 700;
     letter-spacing: 0;
     line-height: 1;
@@ -607,22 +655,28 @@
     padding: 16px 20px 20px;
   }
 
+  /* The key column is as wide as the widest keys in the group. */
+  .groups section {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    column-gap: 16px;
+    align-content: start;
+  }
+
   h3 {
+    grid-column: 1 / -1;
     margin-bottom: 8px;
   }
 
   .row {
-    display: grid;
-    grid-template-columns: 88px minmax(0, 1fr);
-    gap: 12px;
-    align-items: center;
-    min-height: 28px;
+    display: contents;
   }
 
   .combo {
     display: inline-flex;
     align-items: center;
     gap: 3px;
+    min-height: 28px;
   }
 
   kbd {
@@ -661,6 +715,9 @@
   }
 
   .what {
+    display: flex;
+    align-items: center;
+    min-height: 28px;
     color: var(--text-2);
     font-size: 13px;
     line-height: 1.3;
@@ -676,18 +733,13 @@
     }
 
     .tabs {
-      padding: 0 2px;
+      gap: 4px;
     }
 
     .tab {
-      padding: 0 5px;
-      font-size: 12px;
-      letter-spacing: 0.04em;
-    }
-
-    .tab::after {
-      left: 4px;
-      right: 4px;
+      gap: 4px;
+      font-size: 11.5px;
+      letter-spacing: 0.035em;
     }
   }
 
