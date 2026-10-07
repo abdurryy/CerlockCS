@@ -153,7 +153,7 @@
 
 <div class="view">
   <header>
-    <a class="home" href="#/" title="Back to case files"><Logo size={22} word /></a>
+    <a class="home" href="#/" title="Back to case files"><Logo size={26} /></a>
     <span class="sep"></span>
     <h1>{mapLabel(r.match.map)}</h1>
     <div class="match" role="group" aria-label="Final score">

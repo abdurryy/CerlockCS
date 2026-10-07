@@ -49,7 +49,7 @@
 {:else}
   <div class="loading">
     <div class="box" role="status" aria-live="polite">
-      <Logo size={36} />
+      <Logo size={44} />
       {#if !error}
         <div class="title">
           {#if title}

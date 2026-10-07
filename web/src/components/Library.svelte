@@ -128,7 +128,7 @@
 <div class="page">
   <header class="top">
     <div class="wrap top-in">
-      <a class="brand" href="#/" aria-label="Cerlock, case files"><Logo size={26} word /></a>
+      <a class="brand" href="#/" aria-label="Cerlock, case files"><Logo size={30} full /></a>
       <span class="tag">CS2 demo review</span>
       <span class="spacer"></span>
       <button class="primary" onclick={pick} disabled={!!busy}>

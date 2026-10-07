@@ -24,7 +24,15 @@ Short sentences and plain words. Dry, never jokey. It should read like notes fro
 
 ## Logo
 
-The mark is the C of Cerlock drawn as the lens of a magnifying glass, with the handle coming out of the opening of the C and a red dot where a crosshair would be. The wordmark is "cerlock" in Barlow Semi Condensed Bold, lowercase.
+The mark is a Counter-Terrorist operator in a low firing stance, holding a magnifying glass up to his eye the way he would hold a rifle. Helmet, plate carrier, knee pad and boots, drawn as one flat silhouette. The glass has a small red glint, the only red in the logo. The wordmark is CERLOCK in Exo 2 Black Italic, uppercase, turned into outlines so it never depends on a font being installed.
+
+Where each version goes:
+
+- The full logo (operator plus wordmark) on the home page, in the README and as the watermark on exported images.
+- The operator alone in the replay view header and anywhere small, like the loading screen.
+- The bolder favicon below 40 px.
+
+All files and the rules for using them are in [web/src/assets/brand](../web/src/assets/brand/README.md).
 
 ## Colour
 
