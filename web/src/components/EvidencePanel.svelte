@@ -69,18 +69,28 @@
   const tidy = (s: string) => s.replace(/\$(\d{4,})/g, (_, n) => money(Number(n)))
   const rounds = (n: number) => n.toFixed(2)
 
-  // Kinds that always involve the same piece of equipment.
+  // One game icon per kind, so the list reads the same all the way down.
+  // Deaths without a piece of equipment behind them get the skull.
   const KIND_ICON: Record<string, string> = {
+    team_kill: 'hud/elimination',
+    team_damage: 'hud/health',
+    self_damage: 'hud/health',
     team_flash_death: 'weapon/flashbang',
     self_flash_death: 'weapon/flashbang',
+    reload_death: 'weapon/glock',
+    crossfire: 'hud/dead',
+    overpeek: 'hud/dead',
+    running_shots: 'weapon/deagle',
+    unused_utility: 'weapon/hegrenade',
     wasted_molotov: 'weapon/molotov',
     bomb_carrier_first: 'weapon/c4',
     bomb_death: 'weapon/planted_c4',
     late_defuse: 'hud/defuse',
-    no_armor: 'hud/armor',
     time_ran_out: 'hud/time',
-    unused_utility: 'weapon/hegrenade',
+    no_armor: 'hud/armor',
+    buy_desync: 'weapon/armor_helmet',
   }
+  const kindIcon = (k: string) => KIND_ICON[k] ?? 'hud/dead'
 
   interface Gear {
     name: string | null
@@ -184,7 +194,7 @@
         <span></span>
         <span></span>
         <span class="label" title="Pieces of evidence">Count</span>
-        <span class="label" title="Rounds of win chance given away">Rounds</span>
+        <span class="label" title="Rounds of win chance given away">Thrown</span>
       </div>
     {/if}
     {#each suspects.slice(0, 6) as s (s.p)}
@@ -198,7 +208,7 @@
         <span class="name {cls(sideOfPlayer(s.p, v.round))}">{r.playerName(s.p)}</span>
         <span class="bar"><i style:width="{Math.max(2, s.w * 100)}%"></i></span>
         <span class="n num count">{s.n}</span>
-        <span class="n num">{rounds(s.cost)}</span>
+        <span class="n num">{rounds(s.cost)}<small>rds</small></span>
       </button>
     {:else}
       <p class="none">No one.</p>
@@ -211,7 +221,7 @@
       <div class="kinds">
         {#each shownKinds as [k, x] (k)}
           <button class="kind" class:on={kind === k} aria-pressed={kind === k} onclick={() => (kind = kind === k ? '' : k)}>
-            <span class="kicon">{#if KIND_ICON[k]}<GameIcon name={KIND_ICON[k]} h={13} />{/if}</span>
+            <span class="kicon"><GameIcon name={kindIcon(k)} h={13} /></span>
             <span class="ktitle">{x.title}</span>
             <span class="num count">{x.n}</span>
           </button>
@@ -373,7 +383,7 @@
   /* Suspects. */
   .suspect {
     display: grid;
-    grid-template-columns: minmax(0, 118px) minmax(24px, 1fr) 40px 44px;
+    grid-template-columns: minmax(0, 118px) minmax(24px, 1fr) 40px 58px;
     gap: 10px;
     align-items: center;
     height: 28px;
@@ -447,6 +457,13 @@
   }
 
   .n.count {
+    font-weight: 500;
+    color: var(--text-3);
+  }
+
+  .n small {
+    margin-left: 3px;
+    font-size: 11px;
     font-weight: 500;
     color: var(--text-3);
   }

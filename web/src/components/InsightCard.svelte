@@ -42,6 +42,7 @@
     | { kind: 'flash'; from: number; to: number; note: string }
     | { kind: 'util'; p: number; util: number[]; note: string }
     | { kind: 'plant'; p: number; site: string; note: string }
+    | { kind: 'act'; p: number; gear: Gear; text: string; note: string }
     | { kind: 'text'; gear: Gear | null; parts: Part[]; note: string }
 
   // Player names, longest first so one name inside another does not win.
@@ -116,11 +117,19 @@
       const b = (r.roundBomb[m.round] ?? []).find((e) => e.kind === 'planted' && e.tick === m.tick)
       if (b) return { kind: 'plant', p: b.player, site: b.site, note: 'round lost' }
     }
-    if (/^flash blinded no enemies$/.test(t)) {
-      return { kind: 'text', gear: { name: 'weapon/flashbang', title: weaponName(EQ.flash) }, parts: [{ text: 'Blinded no enemies' }], note: '' }
+    if (/^flash blinded no enemies$/.test(t) && m.player >= 0) {
+      // The moment starts a second before the throw, the note says where from.
+      const g = (r.roundGrenades[m.round] ?? []).find(
+        (g) => g.thrower === m.player && g.type === EQ.flash && Math.abs(g.throwTick - r.rate - m.tick) <= 1,
+      )
+      const from = g ? r.placeName(r.state(m.player, g.throwTick).place) : ''
+      const gear = { name: 'weapon/flashbang', title: weaponName(EQ.flash) }
+      return { kind: 'act', p: m.player, gear, text: 'blinded no enemies', note: from ? `from ${from}` : '' }
     }
     if ((x = t.match(/^lost a full buy against (.+) \(\$(\d+) vs \$(\d+)\)$/))) {
-      return { kind: 'text', gear: null, parts: [{ text: `Full buy lost to ${x[1]}` }], note: `${money(Number(x[2]))} vs ${money(Number(x[3]))}` }
+      const s = r.sideOf(ins.team, m.round)
+      const gear = { name: s === 3 ? 'kill/ct' : s === 2 ? 'kill/t' : null, title: s === 3 ? 'CT' : s === 2 ? 'T' : '' }
+      return { kind: 'text', gear, parts: [{ text: `Full buy lost to ${x[1]}` }], note: `${money(Number(x[2]))} vs ${money(Number(x[3]))}` }
     }
     if ((x = t.match(/^(\d+)° off when (.+) appeared$/))) {
       return { kind: 'text', gear: held(m.player, m.tick + 2 * r.rate), parts: [...parts(x[2]), { text: ' appeared' }], note: `${x[1]}° off` }
@@ -175,7 +184,7 @@
                 <span class="who {cls(k.victimSide)}">{r.playerName(k.victim)}</span>
               {:else if l.kind === 'flash'}
                 <span class="who {cls(sideOf(l.from, m.round))}">{r.playerName(l.from)}</span>
-                <span class="gun"><GameIcon name="weapon/flashbang" h={14} title="Flashbang" fallback="flashed" /></span>
+                <span class="gun"><GameIcon name="weapon/flashbang" h={16} title="Flashbang" fallback="flashed" /></span>
                 <span class="who {cls(sideOf(l.to, m.round))}">{r.playerName(l.to)}</span>
               {:else if l.kind === 'util'}
                 <span class="who {cls(sideOf(l.p, m.round))}">{r.playerName(l.p)}</span>
@@ -190,6 +199,10 @@
                   <GameIcon name="weapon/c4" h={14} title="Bomb planted" fallback="planted" />
                   <GameIcon name={SITE[l.site] ?? null} h={14} title="Site {l.site}" fallback={l.site} />
                 </span>
+              {:else if l.kind === 'act'}
+                <span class="who {cls(sideOf(l.p, m.round))}">{r.playerName(l.p)}</span>
+                <span class="gun"><GameIcon name={l.gear.name} h={16} title={l.gear.title} fallback={l.gear.title} /></span>
+                <span class="say">{l.text}</span>
               {:else}
                 {#if l.gear}
                   <span class="gun"><GameIcon name={l.gear.name} h={14} title={l.gear.title} fallback={l.gear.title} /></span>
