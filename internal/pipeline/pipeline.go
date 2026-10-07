@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/klauspost/compress/gzip"
@@ -78,6 +79,7 @@ type Summary struct {
 	Teams    [2]Team      `json:"teams"`
 	Rounds   int          `json:"rounds"`
 	Players  []string     `json:"players"`
+	SteamIDs []string     `json:"steamIds"`
 	Duration float64      `json:"duration"`
 	ParseMs  int64        `json:"parseMs"`
 	Server   string       `json:"server"`
@@ -92,6 +94,16 @@ type Team struct {
 type Options struct {
 	SampleInterval int
 	Progress       func(float32)
+}
+
+// Players returns the names and SteamID64s of the match players, in the
+// same order.
+func Players(m *match.Match) (names, steamIDs []string) {
+	for _, p := range m.Players {
+		names = append(names, p.Name)
+		steamIDs = append(steamIDs, strconv.FormatUint(p.SteamID, 10))
+	}
+	return names, steamIDs
 }
 
 // Run parses the demo in r and writes a gzip compressed replay to w.
@@ -136,8 +148,6 @@ func Run(r io.Reader, w io.Writer, opts Options) (*Summary, error) {
 	for t := 0; t < 2; t++ {
 		s.Teams[t] = Team{Name: m.Teams[t].Name, Score: m.Teams[t].Score}
 	}
-	for _, p := range m.Players {
-		s.Players = append(s.Players, p.Name)
-	}
+	s.Players, s.SteamIDs = Players(m)
 	return s, nil
 }

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/abdurryy/CerlockCS/internal/faceit"
 	"github.com/abdurryy/CerlockCS/internal/icons"
 	"github.com/abdurryy/CerlockCS/internal/maps"
 	"github.com/abdurryy/CerlockCS/internal/pipeline"
@@ -33,13 +34,26 @@ type Config struct {
 	MaxUpload      int64
 	// Static holds the built web app.
 	Static fs.FS
+	// FaceitKey is used when no key is saved in the settings.
+	FaceitKey string
+	// FaceitAPI and FaceitDownloadAPI replace the FACEIT base URLs, tests
+	// point them at a fake. Empty means CERLOCK_FACEIT_API and
+	// CERLOCK_FACEIT_DOWNLOAD_API, or the real FACEIT.
+	FaceitAPI         string
+	FaceitDownloadAPI string
+	// DownloadsDir is watched for FACEIT demos downloaded in the browser,
+	// empty turns it off.
+	DownloadsDir string
 }
 
 type Server struct {
-	cfg   Config
-	lib   *Library
-	maps  *maps.Store
-	icons *icons.Store
+	cfg      Config
+	lib      *Library
+	maps     *maps.Store
+	icons    *icons.Store
+	settings *settingsStore
+	faceit   *faceit.Client
+	dl       *downloader
 }
 
 func New(cfg Config) (*Server, error) {
@@ -54,7 +68,17 @@ func New(cfg Config) (*Server, error) {
 	ms.Offline = cfg.Offline
 	is := icons.NewStore(filepath.Join(cfg.DataDir, "icons"))
 	is.Offline = cfg.Offline
-	return &Server{cfg: cfg, lib: lib, maps: ms, icons: is}, nil
+	if cfg.FaceitAPI == "" {
+		cfg.FaceitAPI = os.Getenv("CERLOCK_FACEIT_API")
+	}
+	if cfg.FaceitDownloadAPI == "" {
+		cfg.FaceitDownloadAPI = os.Getenv("CERLOCK_FACEIT_DOWNLOAD_API")
+	}
+	s := &Server{cfg: cfg, lib: lib, maps: ms, icons: is}
+	s.settings = openSettings(filepath.Join(cfg.DataDir, "settings.json"))
+	s.faceit = faceit.New(cfg.FaceitAPI, cfg.FaceitDownloadAPI, s.faceitKey)
+	s.dl = newDownloader(filepath.Join(cfg.DataDir, "demos", "faceit"), lib, s.faceit, cfg.MaxUpload)
+	return s, nil
 }
 
 var validID = regexp.MustCompile(`^[0-9a-f]{20}$`)
@@ -71,6 +95,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/maps/{name}", s.mapInfo)
 	mux.HandleFunc("GET /api/icons", s.iconList)
 	mux.HandleFunc("GET /api/icons/{group}/{file}", s.icon)
+	mux.HandleFunc("POST /api/open", s.openLink)
+	mux.HandleFunc("GET /api/settings", s.getSettings)
+	mux.HandleFunc("PUT /api/settings", s.putSettings)
+	mux.HandleFunc("POST /api/scout/match", s.scoutMatch)
+	mux.HandleFunc("POST /api/scout/find", s.scoutFind)
+	mux.HandleFunc("POST /api/scout/download", s.scoutDownload)
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	})
@@ -84,7 +114,7 @@ func (s *Server) Run(ctx context.Context) error {
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	if s.cfg.Watch && len(s.cfg.DemoDirs) > 0 {
+	if s.cfg.Watch && (len(s.cfg.DemoDirs) > 0 || s.cfg.DownloadsDir != "") {
 		go s.watch(ctx)
 	}
 	// Fetch missing icons right away so the first replay has them.
@@ -109,6 +139,9 @@ func (s *Server) watch(ctx context.Context) {
 	defer t.Stop()
 	for {
 		s.lib.Scan(s.cfg.DemoDirs, true)
+		if s.cfg.DownloadsDir != "" {
+			s.lib.ScanDownloads(s.cfg.DownloadsDir, 30*24*time.Hour)
+		}
 		select {
 		case <-ctx.Done():
 			return

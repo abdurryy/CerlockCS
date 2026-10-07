@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
+
+	"github.com/abdurryy/CerlockCS/internal/match"
 )
 
 func TestFingerprint(t *testing.T) {
@@ -58,5 +60,13 @@ func TestDecompress(t *testing.T) {
 	}
 	if _, _, err := Decompress(bytes.NewReader([]byte("hello world"))); err != ErrNotDemo {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestPlayers(t *testing.T) {
+	m := &match.Match{Players: []match.Player{{Name: "alpha", SteamID: 76561198000000001}, {Name: "BOT Kim"}}}
+	names, ids := Players(m)
+	if len(names) != 2 || names[1] != "BOT Kim" || ids[0] != "76561198000000001" || ids[1] != "0" {
+		t.Fatalf("names %v ids %v", names, ids)
 	}
 }

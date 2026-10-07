@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -10,10 +11,13 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/klauspost/compress/gzip"
 
 	"github.com/abdurryy/CerlockCS/internal/pipeline"
 	"github.com/abdurryy/CerlockCS/internal/replay"
@@ -27,6 +31,7 @@ type Entry struct {
 	Teams    [2]pipeline.Team `json:"teams"`
 	Rounds   int              `json:"rounds"`
 	Players  []string         `json:"players"`
+	SteamIDs []string         `json:"steamIds"`
 	Duration float64          `json:"duration"`
 	DemoSize int64            `json:"demoSize"`
 	ParseMs  int64            `json:"parseMs"`
@@ -91,6 +96,7 @@ func OpenLibrary(dir string, workers, sampleInterval int) (*Library, error) {
 		if _, err := os.Stat(l.replayPath(e.ID)); err != nil {
 			continue
 		}
+		l.backfill(&e)
 		l.entries[e.ID] = &e
 	}
 	if workers < 1 {
@@ -183,7 +189,7 @@ func (l *Library) Process(job *Job, r io.Reader, size int64) (*Entry, error) {
 	}
 	defer os.Remove(tmp.Name())
 
-	sum, err := pipeline.Run(r, tmp, pipeline.Options{
+	sum, err := runPipeline(r, tmp, pipeline.Options{
 		SampleInterval: l.sample,
 		Progress:       func(p float32) { l.setProgress(job.ID, p) },
 	})
@@ -213,6 +219,7 @@ func (l *Library) Process(job *Job, r io.Reader, size int64) (*Entry, error) {
 		Teams:    sum.Teams,
 		Rounds:   sum.Rounds,
 		Players:  sum.Players,
+		SteamIDs: sum.SteamIDs,
 		Duration: sum.Duration,
 		DemoSize: size,
 		ParseMs:  sum.ParseMs,
@@ -220,8 +227,10 @@ func (l *Library) Process(job *Job, r io.Reader, size int64) (*Entry, error) {
 		Created:  time.Now().UTC(),
 		Format:   replay.Version,
 	}
-	b, _ := json.MarshalIndent(e, "", "  ")
-	if err := os.WriteFile(filepath.Join(l.dir, e.ID+".json"), b, 0o644); err != nil {
+	if e.SteamIDs == nil {
+		e.SteamIDs = []string{}
+	}
+	if err := l.save(e); err != nil {
 		return nil, err
 	}
 	l.mu.Lock()
@@ -230,6 +239,127 @@ func (l *Library) Process(job *Job, r io.Reader, size int64) (*Entry, error) {
 	l.mu.Unlock()
 	log.Printf("parsed %s (%s, %d rounds) in %d ms", e.Name, e.Map, e.Rounds, e.ParseMs)
 	return e, nil
+}
+
+// runPipeline turns a parser panic on a broken file into an error, so one
+// bad demo cannot take the server down.
+func runPipeline(r io.Reader, w io.Writer, opts pipeline.Options) (sum *pipeline.Summary, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			sum, err = nil, fmt.Errorf("the demo could not be read: %v", p)
+		}
+	}()
+	return pipeline.Run(r, w, opts)
+}
+
+func (l *Library) save(e *Entry) error {
+	b, _ := json.MarshalIndent(e, "", "  ")
+	return os.WriteFile(filepath.Join(l.dir, e.ID+".json"), b, 0o644)
+}
+
+// backfill adds the SteamIDs to entries stored before they were part of the
+// entry, reading them from the replay header once.
+func (l *Library) backfill(e *Entry) {
+	if e.SteamIDs != nil {
+		return
+	}
+	ids, err := readSteamIDs(l.replayPath(e.ID))
+	if err != nil {
+		log.Printf("could not read the players of %s: %v", e.Name, err)
+		e.SteamIDs = []string{}
+		return
+	}
+	e.SteamIDs = ids
+	if err := l.save(e); err != nil {
+		log.Printf("could not update %s: %v", e.Name, err)
+	}
+}
+
+func readSteamIDs(path string) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(bufio.NewReader(f))
+	if err != nil {
+		return nil, err
+	}
+	defer zr.Close()
+	h, err := replay.ReadHeader(zr)
+	if err != nil {
+		return nil, err
+	}
+	if h.Match == nil {
+		return nil, errors.New("replay has no match")
+	}
+	_, ids := pipeline.Players(h.Match)
+	if ids == nil {
+		ids = []string{}
+	}
+	return ids, nil
+}
+
+// FindByName returns the id of the newest entry whose file name contains
+// sub, ignoring case, or "".
+func (l *Library) FindByName(sub string) string {
+	sub = strings.ToLower(sub)
+	if sub == "" {
+		return ""
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var best *Entry
+	for _, e := range l.entries {
+		if strings.Contains(strings.ToLower(e.Name), sub) && (best == nil || e.Created.After(best.Created)) {
+			best = e
+		}
+	}
+	if best == nil {
+		return ""
+	}
+	return best.ID
+}
+
+var faceitDemo = regexp.MustCompile(`(?i)^1-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}.*\.dem(\.gz|\.bz2|\.zst)?$`)
+
+// ScanDownloads queues the FACEIT demos in dir (usually the Downloads
+// folder) that changed within maxAge. Only files named after a FACEIT match
+// are picked up, so other downloads are left alone. Browsers only give a
+// download its final name once it is complete, so half written files are
+// skipped by the name check too.
+func (l *Library) ScanDownloads(dir string, maxAge time.Duration) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, de := range entries {
+		if de.IsDir() || !faceitDemo.MatchString(de.Name()) {
+			continue
+		}
+		info, err := de.Info()
+		if err != nil || time.Since(info.ModTime()) > maxAge {
+			continue
+		}
+		if err := l.Enqueue(filepath.Join(dir, de.Name())); err != nil {
+			log.Printf("could not queue %s: %v", de.Name(), err)
+		}
+	}
+}
+
+// SetJob adds or updates a job that is not a parse, for example a demo
+// download, so it shows up next to the parse jobs.
+func (l *Library) SetJob(j Job) {
+	l.mu.Lock()
+	l.jobs[j.ID] = &j
+	l.mu.Unlock()
+}
+
+// DropJob removes a job added with SetJob.
+func (l *Library) DropJob(id string) {
+	l.mu.Lock()
+	delete(l.jobs, id)
+	l.mu.Unlock()
 }
 
 func (l *Library) fail(job *Job, err error) {
