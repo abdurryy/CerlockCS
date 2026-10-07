@@ -24,7 +24,25 @@
   }
 
   export function resetCamera() {
-    renderer?.home()
+    if (!renderer) return
+    renderer.insets = insets()
+    renderer.home()
+  }
+
+  // insets measures the bars that float over the top and bottom of the
+  // stage (score bar, toolbar), so the map is framed between them.
+  function insets(): { top: number; bottom: number } {
+    const box = wrap.getBoundingClientRect()
+    let top = 0
+    let bottom = 0
+    for (const el of wrap.parentElement?.children ?? []) {
+      if (el === wrap) continue
+      const r = el.getBoundingClientRect()
+      if (!r.height || r.width < box.width * 0.5 || r.height > box.height * 0.3) continue
+      if (r.top - box.top < 24) top = Math.max(top, r.bottom - box.top)
+      else if (box.bottom - r.bottom < 24) bottom = Math.max(bottom, box.bottom - r.top)
+    }
+    return { top, bottom }
   }
 
   onMount(() => {
@@ -32,6 +50,7 @@
     renderer = r
     const fit = () => {
       size = { w: wrap.clientWidth, h: wrap.clientHeight }
+      r.insets = insets()
       r.resize(size.w, size.h)
     }
     const ro = new ResizeObserver(fit)
@@ -200,21 +219,22 @@
 
   function onDouble() {
     v.follow = -1
-    renderer?.home()
+    resetCamera()
   }
 
   $effect(() => {
-    // Zoom in when a follow starts.
+    // Zoom in when a follow starts, not so far that the radar image gets
+    // soft.
     const following = v.follow >= 0
     if (!renderer) return
-    if (following && renderer.cam.zoom < 1.8) renderer.cam.zoom = 2.4
+    if (following && renderer.cam.zoom < 1.6) renderer.cam.zoom = 2
   })
 </script>
 
 <div class="radar" bind:this={wrap}>
   <canvas
     bind:this={canvas}
-    style="cursor: {cursor}"
+    style:cursor={cursor}
     onpointerdown={onDown}
     onpointermove={onMove}
     onpointerup={onUp}

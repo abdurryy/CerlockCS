@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { teamColor } from '../lib/colors'
   import type { HeatKind } from '../lib/render/heatmap'
   import type { Viewer } from '../lib/viewer.svelte'
   import Icon from './Icon.svelte'
@@ -6,8 +7,12 @@
   let { v, level, reset }: { v: Viewer; level: () => number; reset: () => void } = $props()
   const r = $derived(v.replay)
 
+  let bar: HTMLDivElement | undefined = $state()
+  let row: HTMLDivElement | undefined = $state()
+  let compact = $state(false)
   let heatOpen = $state(false)
   let heatBox: HTMLSpanElement | undefined = $state()
+  let popLeft = $state(0)
   let who = $state('team:0')
   let kind = $state<HeatKind>('positions')
   let side = $state(0)
@@ -29,6 +34,45 @@
 
   function cycleGhosts() {
     v.ghosts = v.ghosts === -1 ? 0 : v.ghosts === 0 ? 1 : -1
+  }
+
+  // Ghosts belong to one team, so the icon takes that team's colour.
+  const ghostSide = $derived(v.ghosts >= 0 ? r.sideOf(v.ghosts, v.round) : 0)
+  const ghostTitle = $derived(
+    v.ghosts >= 0
+      ? `Ghosts of ${r.teamName(v.ghosts)} (${ghostSide === 3 ? 'CT' : 'T'}): where they stood at this moment in their other rounds on this side (G)`
+      : 'Where a team stood at this moment in their other rounds on the same side (G)',
+  )
+  const conesTitle = $derived(
+    v.cones === 'all' ? 'View cones: all players' : v.cones === 'follow' ? 'View cones: followed player only' : 'View cones: off',
+  )
+
+  // The toolbar stays on one row. Labels go when they would not fit, hidden
+  // labels are still measured so this does not flip back and forth.
+  function fit() {
+    if (!bar || !row) return
+    let need = row.offsetWidth
+    if (compact) for (const t of row.querySelectorAll<HTMLElement>('.txt')) need += t.offsetWidth + 5
+    compact = compact ? need + 8 > bar.clientWidth : need > bar.clientWidth
+  }
+
+  $effect(() => {
+    if (!bar || !row) return
+    const ro = new ResizeObserver(fit)
+    ro.observe(bar)
+    ro.observe(row)
+    return () => ro.disconnect()
+  })
+
+  // The popover opens from the right edge of its button and stays inside
+  // the stage.
+  function toggleHeat() {
+    heatOpen = !heatOpen
+    if (!heatOpen || !heatBox || !bar) return
+    const h = heatBox.getBoundingClientRect()
+    const b = bar.getBoundingClientRect()
+    const right = Math.min(b.right, h.right + 3)
+    popLeft = Math.max(b.left, right - 264) - h.left
   }
 
   function applyHeat() {
@@ -56,7 +100,7 @@
 
 <svelte:window onpointerdown={outside} onkeydown={key} />
 
-<div class="bar">
+<div class="bar" bind:this={bar}>
   {#if v.heat}
     <div class="legend">
       <Icon name="fire" size={13} />
@@ -65,101 +109,101 @@
       <button class="plain" onclick={() => (v.heat = null)} title="Clear the heatmap" aria-label="Clear the heatmap"><Icon name="x" size={12} /></button>
     </div>
   {/if}
-  <div class="group" role="group" aria-label="Layers">
-    <button class:on={v.names} onclick={() => (v.names = !v.names)} title="Player names (H)">
-      <Icon name="names" size={15} /><span class="txt">Names</span>
-    </button>
-    <button class:on={v.cones !== 'none'} onclick={cycleCones} title="View cones: all, followed player only or off">
-      <Icon name="cone" size={15} /><span class="txt">Cones</span>
-      {#if v.cones === 'follow'}<span class="mode">1</span>{/if}
-    </button>
-    <button class:on={v.shots} onclick={() => (v.shots = !v.shots)} title="Shot tracers">
-      <Icon name="target" size={15} /><span class="txt">Shots</span>
-    </button>
-    <button class:on={v.paths} onclick={() => (v.paths = !v.paths)} title="Grenade trajectories">
-      <Icon name="nade" size={15} /><span class="txt">Nades</span>
-    </button>
-    <button class:on={v.callouts} onclick={() => (v.callouts = !v.callouts)} title="Callout names (C)">
-      <Icon name="pin" size={15} /><span class="txt">Callouts</span>
-    </button>
-    <button class:on={v.evidence} onclick={() => (v.evidence = !v.evidence)} title="Evidence markers for blunders (E)">
-      <Icon name="search" size={15} /><span class="txt">Evidence</span>
-    </button>
-  </div>
-
-  <div class="group" role="group" aria-label="View">
-    <button class:on={v.teamVision} disabled={v.follow < 0} onclick={() => (v.teamVision = !v.teamVision)} title="Only show enemies the followed player's team could see (V)">
-      <Icon name="eye" size={15} /><span class="txt">Vision</span>
-    </button>
-    <button class:on={v.rotate} disabled={v.follow < 0} onclick={() => (v.rotate = !v.rotate)} title="Rotate the map with the followed player (R)">
-      <Icon name="rotate" size={15} /><span class="txt">Rotate</span>
-    </button>
-    <button class:on={v.ghosts >= 0} onclick={cycleGhosts} title="Where a team stood at this moment in their other rounds on the same side (G)">
-      <Icon name="ghost" size={15} /><span class="txt">Ghosts</span>
-      {#if v.ghosts >= 0}<span class="mode">{v.ghosts === 0 ? 'A' : 'B'}</span>{/if}
-    </button>
-    <span class="heat" bind:this={heatBox}>
-      <button class:on={!!v.heat} class:open={heatOpen} onclick={() => (heatOpen = !heatOpen)} title="Heatmap" aria-expanded={heatOpen}>
-        <Icon name="fire" size={15} /><span class="txt">Heatmap</span>
+  <div class="row" class:compact bind:this={row}>
+    <div class="group" role="group" aria-label="Layers">
+      <button class:on={v.names} aria-pressed={v.names} onclick={() => (v.names = !v.names)} title="Player names (H)">
+        <Icon name="names" size={15} /><span class="txt">Names</span>
       </button>
-      {#if heatOpen}
-        <div class="pop" role="dialog" aria-label="Heatmap">
-          <div class="pop-head">
-            <span class="label">Heatmap</span>
-            <button class="plain close" onclick={() => (heatOpen = false)} title="Close"><Icon name="x" size={13} /></button>
-          </div>
-          <label class="field">
-            <span class="label">Who</span>
-            <select bind:value={who}>
-              <optgroup label="Teams">
-                <option value="team:0">{r.teamName(0)}</option>
-                <option value="team:1">{r.teamName(1)}</option>
-              </optgroup>
-              <optgroup label="Players">
-                {#each r.match.players as p (p.index)}
-                  <option value="player:{p.index}">{p.name}</option>
+      <button class:on={v.cones !== 'none'} aria-pressed={v.cones !== 'none'} class:mine={v.cones === 'follow'} onclick={cycleCones} title={conesTitle}>
+        <Icon name="cone" size={15} /><span class="txt">Cones</span>
+      </button>
+      <button class:on={v.shots} aria-pressed={v.shots} onclick={() => (v.shots = !v.shots)} title="Shot tracers">
+        <Icon name="target" size={15} /><span class="txt">Shots</span>
+      </button>
+      <button class:on={v.paths} aria-pressed={v.paths} onclick={() => (v.paths = !v.paths)} title="Grenade trajectories">
+        <Icon name="nade" size={15} /><span class="txt">Nades</span>
+      </button>
+      <button class:on={v.callouts} aria-pressed={v.callouts} onclick={() => (v.callouts = !v.callouts)} title="Callout names (C)">
+        <Icon name="pin" size={15} /><span class="txt">Callouts</span>
+      </button>
+      <button class:on={v.evidence} aria-pressed={v.evidence} onclick={() => (v.evidence = !v.evidence)} title="Evidence markers for blunders (E)">
+        <Icon name="search" size={15} /><span class="txt">Evidence</span>
+      </button>
+    </div>
+
+    <div class="group" role="group" aria-label="View">
+      <button class:on={v.teamVision} aria-pressed={v.teamVision} disabled={v.follow < 0} onclick={() => (v.teamVision = !v.teamVision)} title="Only show enemies the followed player's team could see (V)">
+        <Icon name="eye" size={15} /><span class="txt">Vision</span>
+      </button>
+      <button class:on={v.rotate} aria-pressed={v.rotate} disabled={v.follow < 0} onclick={() => (v.rotate = !v.rotate)} title="Rotate the map with the followed player (R)">
+        <Icon name="rotate" size={15} /><span class="txt">Rotate</span>
+      </button>
+      <button class:on={v.ghosts >= 0} aria-pressed={v.ghosts >= 0} class:tinted={v.ghosts >= 0} style:--tint={v.ghosts >= 0 ? teamColor(ghostSide).base : null} onclick={cycleGhosts} title={ghostTitle}>
+        <Icon name="ghost" size={15} /><span class="txt">Ghosts</span>
+      </button>
+      <span class="heat" bind:this={heatBox}>
+        <button class:on={!!v.heat} class:open={heatOpen} onclick={toggleHeat} title="Heatmap" aria-expanded={heatOpen}>
+          <Icon name="fire" size={15} /><span class="txt">Heatmap</span>
+        </button>
+        {#if heatOpen}
+          <div class="pop" role="dialog" aria-label="Heatmap" style:left="{popLeft}px">
+            <div class="pop-head">
+              <span class="label">Heatmap</span>
+              <button class="plain close" onclick={() => (heatOpen = false)} title="Close"><Icon name="x" size={13} /></button>
+            </div>
+            <label class="field">
+              <span class="label">Who</span>
+              <select bind:value={who}>
+                <optgroup label="Teams">
+                  <option value="team:0">{r.teamName(0)}</option>
+                  <option value="team:1">{r.teamName(1)}</option>
+                </optgroup>
+                <optgroup label="Players">
+                  {#each r.match.players as p (p.index)}
+                    <option value="player:{p.index}">{p.name}</option>
+                  {/each}
+                </optgroup>
+              </select>
+            </label>
+            <div class="field">
+              <span class="label">What</span>
+              <div class="seg" role="radiogroup" aria-label="What">
+                {#each KINDS as k (k.id)}
+                  <button role="radio" aria-checked={kind === k.id} class:sel={kind === k.id} onclick={() => (kind = k.id)}>{k.label}</button>
                 {/each}
-              </optgroup>
-            </select>
-          </label>
-          <div class="field">
-            <span class="label">What</span>
-            <div class="seg" role="radiogroup" aria-label="What">
-              {#each KINDS as k (k.id)}
-                <button role="radio" aria-checked={kind === k.id} class:sel={kind === k.id} onclick={() => (kind = k.id)}>{k.label}</button>
-              {/each}
+              </div>
+            </div>
+            <div class="field">
+              <span class="label">Side</span>
+              <div class="seg" role="radiogroup" aria-label="Side">
+                {#each SIDES as s (s.id)}
+                  <button role="radio" aria-checked={side === s.id} class="{s.id === 3 ? 'is-ct' : s.id === 2 ? 'is-t' : ''}" class:sel={side === s.id} onclick={() => (side = s.id)}>{s.label}</button>
+                {/each}
+              </div>
+            </div>
+            <div class="actions">
+              {#if v.heat}<button class="plain" onclick={() => { v.heat = null; heatOpen = false }}>Clear</button>{/if}
+              <button class="go" onclick={applyHeat}>Show heatmap</button>
             </div>
           </div>
-          <div class="field">
-            <span class="label">Side</span>
-            <div class="seg" role="radiogroup" aria-label="Side">
-              {#each SIDES as s (s.id)}
-                <button role="radio" aria-checked={side === s.id} class="{s.id === 3 ? 'is-ct' : s.id === 2 ? 'is-t' : ''}" class:sel={side === s.id} onclick={() => (side = s.id)}>{s.label}</button>
-              {/each}
-            </div>
-          </div>
-          <div class="actions">
-            {#if v.heat}<button class="plain" onclick={() => { v.heat = null; heatOpen = false }}>Clear</button>{/if}
-            <button class="go" onclick={applyHeat}>Show heatmap</button>
-          </div>
-        </div>
+        {/if}
+      </span>
+      {#if v.map.multiLevel}
+        <button class="floor" class:on={v.layer >= 0} onclick={cycleLevel} title="Floor: automatic, upper or lower (L)">
+          <span class="levels" aria-hidden="true">
+            <i class:lit={v.layer === 0}></i>
+            <i class:lit={v.layer === 1}></i>
+          </span>
+          <span>{v.layer < 0 ? 'Auto' : v.layer === 0 ? 'Upper' : 'Lower'}</span>
+        </button>
       {/if}
-    </span>
-    {#if v.map.multiLevel}
-      <button class="floor" class:on={v.layer >= 0} onclick={cycleLevel} title="Floor: automatic, upper or lower (L)">
-        <span class="levels" aria-hidden="true">
-          <i class:lit={v.layer === 0}></i>
-          <i class:lit={v.layer === 1}></i>
-        </span>
-        <span>{v.layer < 0 ? 'Auto' : v.layer === 0 ? 'Upper' : 'Lower'}</span>
-      </button>
-    {/if}
-  </div>
+    </div>
 
-  <div class="group" role="group" aria-label="Camera">
-    <button class="only" onclick={() => { v.follow = -1; reset() }} title="Reset the camera (double click the map)" aria-label="Reset the camera">
-      <Icon name="frame" size={15} />
-    </button>
+    <div class="group" role="group" aria-label="Camera">
+      <button class="only" onclick={() => { v.follow = -1; reset() }} title="Reset the camera (double click the map)" aria-label="Reset the camera">
+        <Icon name="frame" size={15} />
+      </button>
+    </div>
   </div>
 </div>
 
@@ -174,11 +218,14 @@
     right: 12px;
     bottom: 12px;
     display: flex;
-    flex-wrap: wrap;
+    pointer-events: none;
+  }
+
+  .row {
+    flex: none;
+    display: flex;
     align-items: flex-end;
     gap: 6px;
-    pointer-events: none;
-    container-type: inline-size;
   }
 
   .group {
@@ -200,7 +247,7 @@
     align-items: center;
     gap: 6px;
     height: 28px;
-    padding: 0 8px 0 7px;
+    padding: 0 7px 0 6px;
     border: none;
     border-radius: var(--radius-sm);
     background: transparent;
@@ -241,18 +288,14 @@
     opacity: 0.4;
   }
 
-  .mode {
-    min-width: 15px;
-    height: 15px;
-    padding: 0 3px;
-    margin-left: -1px;
-    border-radius: 3px;
-    background: var(--accent);
-    color: #fff;
-    font-size: 10px;
-    font-weight: 700;
-    line-height: 15px;
-    text-align: center;
+  /* Cones for the followed player only take the followed player's red,
+     ghosts take the colour of the team they show. */
+  .group > button.mine :global(.icon) {
+    color: var(--accent);
+  }
+
+  .group > button.tinted :global(.icon) {
+    color: var(--tint);
   }
 
   .heat {
@@ -323,7 +366,7 @@
   }
 
   .levels i.lit {
-    background: var(--accent);
+    background: currentColor;
     box-shadow: none;
     opacity: 1;
   }
@@ -336,7 +379,6 @@
   .pop {
     position: absolute;
     bottom: calc(100% + 10px);
-    left: -3px;
     width: 264px;
     padding: 12px;
     display: flex;
@@ -469,15 +511,22 @@
     white-space: nowrap;
   }
 
-  /* Narrow stages keep the icons and drop the words. */
-  @container (max-width: 860px) {
-    .txt {
-      display: none;
-    }
+  /* When the words do not fit only the icons stay. The words are taken out
+     of the flow but kept measurable. */
+  .compact .txt {
+    position: absolute;
+    visibility: hidden;
+    pointer-events: none;
+  }
 
-    .group > button,
-    .heat > button {
-      padding: 0 7px;
-    }
+  .compact .group > button,
+  .compact .heat > button {
+    padding: 0 7px;
+  }
+
+  /* Only on very small screens does the toolbar take a second row. */
+  .row.compact {
+    max-width: 100%;
+    flex-wrap: wrap;
   }
 </style>

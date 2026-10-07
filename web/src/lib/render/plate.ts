@@ -125,6 +125,7 @@ export function makePlate(image: CanvasImageSource): Plate {
     d[o + 1] = g * shade
     d[o + 2] = b * shade
   }
+  sharpen(d, solid)
   sctx.putImageData(img, 0, 0)
 
   const out = canvas(SIZE + PLATE_PAD * 2, SIZE + PLATE_PAD * 2)
@@ -157,6 +158,39 @@ export function makePlate(image: CanvasImageSource): Plate {
   const alpha = new Uint8Array(N)
   for (let p = 0; p < N; p++) alpha[p] = d[p * 4 + 3]
   return { canvas: out, outline: trace(alpha, SIZE, SOLID) }
+}
+
+// sharpen is a light unsharp mask on the playable area, so walls and
+// edges stay crisp when the radar is zoomed in.
+function sharpen(d: Uint8ClampedArray, solid: Uint8Array) {
+  const W = SIZE
+  const AMOUNT = 0.7
+  const blur = new Float32Array(W * W * 3)
+  const tmp = new Float32Array(W * W * 3)
+  // Separable 1 2 1 blur, rows then columns.
+  for (let y = 0; y < W; y++) {
+    for (let x = 0; x < W; x++) {
+      const p = y * W + x
+      const l = x > 0 ? p - 1 : p
+      const r = x < W - 1 ? p + 1 : p
+      for (let c = 0; c < 3; c++) tmp[p * 3 + c] = (d[l * 4 + c] + 2 * d[p * 4 + c] + d[r * 4 + c]) / 4
+    }
+  }
+  for (let y = 0; y < W; y++) {
+    for (let x = 0; x < W; x++) {
+      const p = y * W + x
+      const u = y > 0 ? p - W : p
+      const v = y < W - 1 ? p + W : p
+      for (let c = 0; c < 3; c++) blur[p * 3 + c] = (tmp[u * 3 + c] + 2 * tmp[p * 3 + c] + tmp[v * 3 + c]) / 4
+    }
+  }
+  for (let p = 0; p < W * W; p++) {
+    if (!solid[p]) continue
+    for (let c = 0; c < 3; c++) {
+      const v = d[p * 4 + c]
+      d[p * 4 + c] = v + (v - blur[p * 3 + c]) * AMOUNT
+    }
+  }
 }
 
 // distance gives every pixel its distance in pixels to the nearest empty

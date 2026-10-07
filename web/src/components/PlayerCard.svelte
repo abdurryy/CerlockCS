@@ -16,6 +16,7 @@
     side,
     s,
     st,
+    was = 0,
     death = null,
     killer = '',
     followed,
@@ -26,6 +27,8 @@
     side: number
     s: PlayerState
     st: LiveStats
+    // Health a moment ago, the part lost since then shows as a white strip.
+    was?: number
     death?: Kill | null
     killer?: string
     followed: boolean
@@ -33,8 +36,12 @@
   } = $props()
 
   const team = $derived(teamColor(side))
-  // How white the card is while the player is flashed, same curve as the radar.
+  // How blind the player is, same curve as the radar. A strong flash turns
+  // the card white with dark text, a fading one only tints it, so the text
+  // never sits on a mid grey.
   const blind = $derived(s.alive ? Math.min(1, s.flash / 1.6) : 0)
+  const strong = $derived(blind > 0.45)
+  const wash = $derived(strong ? 0.62 + ((blind - 0.45) / 0.55) * 0.3 : (blind / 0.45) * 0.18)
   const active = $derived(s.alive ? weaponIcon(s.weapon, side) : null)
   const primary = $derived(s.alive && s.primary && s.primary !== s.weapon ? s.primary : 0)
   const helmet = $derived((s.flags & FLAG.helmet) !== 0)
@@ -77,14 +84,15 @@
   class:dead={s.present && !s.alive}
   class:gone={!s.present}
   class:followed
-  class:blinded={blind > 0.45}
+  class:blinded={strong}
+  class:tinted={blind > 0 && !strong}
   {onclick}
   aria-pressed={followed}
   title={followed ? `Stop following ${name}` : `Follow ${name}`}
   style:--team={team.base}
   style:--team-deep={team.deep}
 >
-  {#if blind > 0}<span class="flashed" style:opacity={blind}></span>{/if}
+  {#if blind > 0}<span class="flashed" style:opacity={wash}></span>{/if}
 
   <span class="top">
     <span class="slot num" style:--slot={slotColor(slot)}>{slot}</span>
@@ -104,7 +112,10 @@
 
   {#if s.present}
     {#if s.alive}
-      <span class="hp" class:low={s.hp <= 25} style:--hp="{s.hp}%"><span class="lost"></span><span class="fill"></span></span>
+      <span class="hp" class:low={s.hp <= 25}>
+        <span class="lost" style:width="{Math.max(was, s.hp)}%"></span>
+        <span class="fill" style:width="{s.hp}%"></span>
+      </span>
     {/if}
 
     <span class="bottom">
@@ -172,12 +183,13 @@
     box-shadow: inset 2px 0 0 var(--accent);
   }
 
-  /* White wash while flashed. Text turns dark once the card is bright. */
+  /* White wash while flashed. A strong flash makes the card white with dark
+     text, a fading one only tints it and the text stays light. */
   .flashed {
     position: absolute;
     inset: 0;
     z-index: -1;
-    background: rgba(255, 255, 255, 0.9);
+    background: #fff;
     pointer-events: none;
   }
 
@@ -185,7 +197,8 @@
   .blinded .name,
   .blinded .hpv,
   .blinded .cash,
-  .blinded .active {
+  .blinded .active,
+  .blinded .nade.held {
     color: var(--bg);
   }
 
@@ -193,19 +206,40 @@
   .blinded .gear,
   .blinded .nade,
   .blinded .kda {
-    color: rgba(11, 13, 17, 0.7);
-  }
-
-  .blinded .nade.held {
-    color: var(--bg);
+    color: rgba(11, 13, 17, 0.75);
   }
 
   .blinded .kda i {
-    color: rgba(11, 13, 17, 0.4);
+    color: rgba(11, 13, 17, 0.55);
+  }
+
+  .blinded .hpv.low {
+    color: color-mix(in srgb, var(--bad) 35%, var(--bg));
+  }
+
+  .blinded .kit {
+    color: var(--ct-deep);
   }
 
   .blinded .hp {
     background: rgba(11, 13, 17, 0.15);
+  }
+
+  .blinded .lost {
+    background: rgba(11, 13, 17, 0.3);
+  }
+
+  .tinted .guns,
+  .tinted .kda i {
+    color: var(--text-2);
+  }
+
+  .tinted .active {
+    color: var(--text);
+  }
+
+  .tinted .hpv.low {
+    color: color-mix(in srgb, var(--bad) 75%, #fff);
   }
 
   .top,
@@ -262,6 +296,7 @@
 
   .hp {
     position: relative;
+    flex: none;
     height: 3px;
     margin-left: 24px;
     background: rgba(255, 255, 255, 0.06);
@@ -272,7 +307,6 @@
   .hp span {
     position: absolute;
     inset: 0 auto 0 0;
-    width: var(--hp);
   }
 
   .fill {
@@ -283,21 +317,20 @@
     background: var(--team-deep);
   }
 
-  /* Health just lost, catches up a moment later. */
+  /* Health lost in the last second. */
   .lost {
     background: rgba(255, 255, 255, 0.55);
-    transition: width 0.45s ease-out 0.3s;
+    transition: width 0.3s ease-out;
   }
 
   .bottom {
     height: 15px;
-    gap: 10px;
+    gap: 8px;
   }
 
   .hpv {
     flex: none;
     width: 16px;
-    margin-right: -2px;
     font-family: var(--display);
     font-size: 12px;
     font-weight: 600;
@@ -313,7 +346,7 @@
     min-width: 0;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
     color: var(--text-2);
     overflow: hidden;
   }
@@ -350,8 +383,8 @@
   .nades {
     display: flex;
     align-items: center;
-    gap: 4px;
-    margin-left: 2px;
+    gap: 3px;
+    margin-left: 1px;
   }
 
   .nade {
@@ -372,12 +405,12 @@
   .kda i {
     font-style: normal;
     color: var(--text-3);
-    margin: 0 2px;
+    margin: 0 1.5px;
   }
 
   .cash {
     flex: none;
-    min-width: 42px;
+    min-width: 40px;
     text-align: right;
     font-size: 12px;
     font-weight: 500;
@@ -390,26 +423,64 @@
     color: var(--text-3);
   }
 
-  .dead .slot {
-    background: var(--surface-3);
-    color: var(--text-3);
+  .dead .bottom {
+    padding-left: 24px;
   }
 
-  .dead {
-    gap: 6px;
-  }
-
-  .gone {
-    height: 34px;
-    opacity: 0.4;
-  }
-
+  .dead .slot,
   .gone .slot {
     background: var(--surface-3);
     color: var(--text-3);
   }
 
+  .gone {
+    height: 28px;
+    opacity: 0.4;
+  }
+
   .gone .name {
     color: var(--text-3);
+  }
+
+  /* Shorter screens get tighter cards that grow with the screen height, so
+     both teams fit without scrolling. */
+  @media (max-height: 919px) {
+    .card {
+      height: 50px;
+      height: clamp(50px, round(down, (100vh - 297px) / 10, 1px), 56px);
+      gap: 4px;
+    }
+
+    .top {
+      height: 16px;
+    }
+
+    .name {
+      font-size: 14px;
+    }
+
+    .hp {
+      height: 2px;
+    }
+
+    .bottom {
+      height: 14px;
+    }
+
+    .gone {
+      height: 24px;
+    }
+  }
+
+  @media (max-height: 799px) {
+    .card {
+      height: 44px;
+      height: clamp(42px, round(down, (100vh - 275px) / 10, 1px), 50px);
+      gap: 3px;
+    }
+
+    .gone {
+      height: 22px;
+    }
   }
 </style>

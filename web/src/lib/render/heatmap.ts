@@ -16,16 +16,17 @@ export interface HeatConfig {
 const G = 256
 const CELL = 1024 / G
 
-// Colour ramp from a faint plum through brand red and orange to pale
-// yellow, warm so it stands out on the cool map.
+// Colour ramp from a faint violet through magenta to a pale pink. It
+// stays clear of the team colours, fire and the evidence amber, and stands
+// out on the cool map. Low values are mostly transparent.
 const RAMP: [number, number, number, number][] = [
   [0, 0, 0, 0],
-  [150, 40, 110, 0.2],
-  [220, 55, 90, 0.46],
-  [245, 85, 70, 0.64],
-  [255, 160, 70, 0.8],
-  [255, 225, 130, 0.9],
-  [255, 250, 230, 0.96],
+  [92, 74, 196, 0.14],
+  [128, 84, 212, 0.3],
+  [170, 94, 216, 0.46],
+  [210, 108, 204, 0.6],
+  [236, 144, 206, 0.72],
+  [246, 186, 224, 0.82],
 ]
 
 function ramp(v: number): [number, number, number, number] {
@@ -121,5 +122,11 @@ export function buildHeatmap(r: Replay, map: MapView, cfg: HeatConfig): HTMLCanv
   const ctx = out.getContext('2d')!
   ctx.imageSmoothingEnabled = true
   ctx.drawImage(small, 0, 0, 1024, 1024)
+  // Keep the heat inside the playable area.
+  const outline = map.layers[Math.min(cfg.level, map.layers.length - 1)]?.outline
+  if (outline) {
+    ctx.globalCompositeOperation = 'destination-in'
+    ctx.fill(outline, 'evenodd')
+  }
   return out
 }

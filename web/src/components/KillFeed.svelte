@@ -42,8 +42,12 @@
       {#if k.killer >= 0 && k.killer !== k.victim}
         <span class="name {cls(k.killerSide)}">{r.playerName(k.killer)}</span>
         {#if k.assister >= 0}
-          <span class="plus">+</span>
-          {#if k.flashAssist}<GameIcon name="kill/flash" h={15} title="Flash assist" />{/if}
+          <!-- The flash assist icon has its own plus, like in game. -->
+          {#if k.flashAssist}
+            <span class="assist"><GameIcon name="kill/flash" h={16} title="Flash assist" fallback="+" /></span>
+          {:else}
+            <span class="plus">+</span>
+          {/if}
           <span class="name {cls(k.killerSide)}">{r.playerName(k.assister)}</span>
         {/if}
       {/if}
@@ -113,6 +117,11 @@
     color: var(--text-2);
     font-weight: 500;
     margin: 0 -2px;
+  }
+
+  .assist {
+    display: inline-flex;
+    color: var(--text-2);
   }
 
   .icons {

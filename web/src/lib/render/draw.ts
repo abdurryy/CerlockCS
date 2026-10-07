@@ -76,13 +76,15 @@ export function centreText(ctx: CanvasRenderingContext2D, text: string, x: numbe
 }
 
 // smokeSprite builds a soft, cloudy disc once so smokes look like smoke
-// instead of flat circles.
+// instead of flat circles. A soft dark edge keeps the cloud readable on
+// light floors, so the sprite has room around the cloud for it.
 export function smokeSprite(): HTMLCanvasElement {
   const S = 256
-  const c = document.createElement('canvas')
-  c.width = S
-  c.height = S
-  const ctx = c.getContext('2d')!
+  const C = S / 2
+  const cloud = document.createElement('canvas')
+  cloud.width = S
+  cloud.height = S
+  const ctx = cloud.getContext('2d')!
   let seed = 11
   const rand = () => {
     seed = (seed * 16807) % 2147483647
@@ -90,26 +92,50 @@ export function smokeSprite(): HTMLCanvasElement {
   }
   const puff = (x: number, y: number, r: number, a: number) => {
     const g = ctx.createRadialGradient(x, y, 0, x, y, r)
-    g.addColorStop(0, `rgba(200,207,216,${a})`)
-    g.addColorStop(0.6, `rgba(190,198,208,${a * 0.75})`)
-    g.addColorStop(1, 'rgba(184,192,203,0)')
+    g.addColorStop(0, `rgba(204,211,220,${a})`)
+    g.addColorStop(0.6, `rgba(193,201,211,${a * 0.78})`)
+    g.addColorStop(1, 'rgba(186,194,205,0)')
     ctx.fillStyle = g
     ctx.beginPath()
     ctx.arc(x, y, r, 0, Math.PI * 2)
     ctx.fill()
   }
-  puff(128, 128, 108, 0.95)
+  puff(C, C, 93, 0.96)
   for (let i = 0; i < 28; i++) {
     const ang = (i / 28) * Math.PI * 2 + rand() * 0.3
-    const d = 70 + rand() * 26
-    puff(128 + Math.cos(ang) * d, 128 + Math.sin(ang) * d, 24 + rand() * 18, 0.45 + rand() * 0.35)
+    const d = 60 + rand() * 22
+    puff(C + Math.cos(ang) * d, C + Math.sin(ang) * d, 21 + rand() * 15, 0.5 + rand() * 0.35)
   }
   // Light from above gives it some volume.
-  const shade = ctx.createLinearGradient(0, 20, 0, S - 20)
+  const shade = ctx.createLinearGradient(0, 30, 0, S - 30)
   shade.addColorStop(0, 'rgba(255,255,255,0.14)')
-  shade.addColorStop(1, 'rgba(10,14,20,0.18)')
+  shade.addColorStop(1, 'rgba(10,14,20,0.2)')
   ctx.globalCompositeOperation = 'source-atop'
   ctx.fillStyle = shade
+  ctx.fillRect(0, 0, S, S)
+
+  const out = document.createElement('canvas')
+  out.width = S
+  out.height = S
+  const octx = out.getContext('2d')!
+  octx.shadowColor = 'rgba(6,9,13,0.6)'
+  octx.shadowBlur = 10
+  octx.drawImage(cloud, 0, 0)
+  return out
+}
+
+// flameSprite is a soft warm glow, drawn along the edge of a fire.
+export function flameSprite(): HTMLCanvasElement {
+  const S = 64
+  const c = document.createElement('canvas')
+  c.width = S
+  c.height = S
+  const ctx = c.getContext('2d')!
+  const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2)
+  g.addColorStop(0, 'rgba(255,176,88,1)')
+  g.addColorStop(0.45, 'rgba(255,128,56,0.55)')
+  g.addColorStop(1, 'rgba(240,90,44,0)')
+  ctx.fillStyle = g
   ctx.fillRect(0, 0, S, S)
   return c
 }

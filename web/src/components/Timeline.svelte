@@ -152,7 +152,7 @@
     <select class="num speed" bind:value={v.speed} title="Playback speed ([ and ])">
       {#each SPEEDS as s (s)}<option value={s}>{s}x</option>{/each}
     </select>
-    <button class="skip" class:on={v.skipFreeze} onclick={() => (v.skipFreeze = !v.skipFreeze)} title="Skip freeze time and the gap between rounds">
+    <button class="skip" class:on={v.skipFreeze} aria-pressed={v.skipFreeze} onclick={() => (v.skipFreeze = !v.skipFreeze)} title="Skip freeze time and the gap between rounds">
       <Icon name="skip" size={13} />
       <span>Skip freeze</span>
     </button>
@@ -172,7 +172,7 @@
             {/if}
           </span>
           <span class="n num">{i + 1}</span>
-          {#if r.roundBlunders[i].length}<span class="ev num">{r.roundBlunders[i].length}</span>{/if}
+          {#if r.roundBlunders[i].length}<i class="ev"></i>{/if}
         </button>
       {/each}
     </div>
@@ -200,8 +200,8 @@
     >
       <svg {width} height={H} aria-hidden="true">
         <defs>
-          <clipPath id="wp-top"><rect x="0" y="0" width={width} height={mid} /></clipPath>
-          <clipPath id="wp-bottom"><rect x="0" y={mid} width={width} height={mid} /></clipPath>
+          <clipPath id="wp-top"><rect x="0" y="0" width={width} height={mid - 1} /></clipPath>
+          <clipPath id="wp-bottom"><rect x="0" y={mid + 1} width={width} height={mid - 1} /></clipPath>
         </defs>
         <rect x="0" y="0" width={frac(rd.freezeEndTick) * width} height={H} fill="rgba(255,255,255,0.03)" />
         <rect x={frac(rd.endTick) * width} y="0" width={Math.max(0, width - frac(rd.endTick) * width)} height={H} fill="rgba(0,0,0,0.35)" />
@@ -210,9 +210,11 @@
         {/each}
         <line x1="0" x2={width} y1={mid} y2={mid} stroke="rgba(255,255,255,0.1)" stroke-dasharray="3 4" />
         {#if wp}
-          <path d={wp.area} fill={colors[0].base} fill-opacity="0.2" clip-path="url(#wp-top)" />
-          <path d={wp.area} fill={colors[1].base} fill-opacity="0.2" clip-path="url(#wp-bottom)" />
-          <path d={wp.line} fill="none" stroke="rgba(236,239,243,0.8)" stroke-width="1.5" stroke-linejoin="round" />
+          <path d={wp.area} fill={colors[0].base} fill-opacity="0.14" clip-path="url(#wp-top)" />
+          <path d={wp.area} fill={colors[1].base} fill-opacity="0.14" clip-path="url(#wp-bottom)" />
+          <path d={wp.line} fill="none" stroke="rgba(236,239,243,0.45)" stroke-width="1.5" stroke-linejoin="round" />
+          <path d={wp.line} fill="none" stroke={colors[0].base} stroke-width="1.5" stroke-linejoin="round" clip-path="url(#wp-top)" />
+          <path d={wp.line} fill="none" stroke={colors[1].base} stroke-width="1.5" stroke-linejoin="round" clip-path="url(#wp-bottom)" />
         {/if}
         {#each bombs as b, i (i)}
           <line x1={b.x} x2={b.x} y1="0" y2={H} stroke={b.kind === 'defused' ? 'var(--ct)' : 'var(--accent)'} stroke-opacity="0.45" />
@@ -246,7 +248,8 @@
     padding: 10px 14px 12px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
+    container-type: inline-size;
   }
 
   .controls {
@@ -312,7 +315,7 @@
     font-size: 12.5px;
     color: var(--text-3);
     background: transparent;
-    border-color: var(--line-2);
+    border-color: var(--line);
     white-space: nowrap;
     flex: none;
   }
@@ -328,7 +331,7 @@
   }
 
   .skip.on :global(.icon) {
-    color: var(--accent);
+    color: var(--text-2);
   }
 
   .now {
@@ -365,8 +368,8 @@
     display: flex;
     gap: 3px;
     overflow-x: auto;
-    padding: 5px 5px 1px 1px;
-    margin: -5px 0 -1px;
+    padding: 1px 1px 6px;
+    margin: -1px 0 -6px;
     scrollbar-width: thin;
   }
 
@@ -447,23 +450,17 @@
     background: currentColor;
   }
 
-  /* Evidence count, a small amber tag on the corner. */
+  /* A round with evidence gets a small amber dot under it, the count is
+     in the tooltip. */
   .ev {
     position: absolute;
-    top: -5px;
-    right: -5px;
-    min-width: 13px;
-    height: 13px;
-    padding: 0 3px;
-    border-radius: 3px;
-    background: #3a2c0c;
-    color: var(--evidence);
-    box-shadow: 0 0 0 2px var(--surface), inset 0 0 0 1px rgba(255, 194, 71, 0.45);
-    font-family: var(--display);
-    font-size: 9.5px;
-    font-weight: 700;
-    line-height: 13px;
-    text-align: center;
+    left: 50%;
+    bottom: -6px;
+    width: 4px;
+    height: 4px;
+    margin-left: -2px;
+    border-radius: 50%;
+    background: var(--evidence);
   }
 
   .half {
@@ -546,7 +543,7 @@
 
   .head {
     position: absolute;
-    top: -4px;
+    top: -3px;
     bottom: -4px;
     width: 2px;
     background: var(--accent);
@@ -569,7 +566,7 @@
 
   .pin {
     position: absolute;
-    top: -8px;
+    top: -6px;
     transform: translateX(-50%);
     z-index: 1;
     width: 16px;
@@ -638,7 +635,7 @@
     font-size: 13px;
   }
 
-  @media (max-width: 1280px) {
+  @container (max-width: 1000px) {
     .skip span {
       display: none;
     }
@@ -647,6 +644,26 @@
       width: 30px;
       padding: 0;
       justify-content: center;
+    }
+  }
+
+  @container (max-width: 640px) {
+    .controls {
+      flex-wrap: wrap;
+      row-gap: 12px;
+    }
+
+    .rounds {
+      flex-basis: 100%;
+    }
+
+    .now {
+      border-right: none;
+    }
+
+    .legend {
+      width: 112px;
+      padding: 5px 8px;
     }
   }
 </style>
