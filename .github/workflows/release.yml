@@ -91,7 +91,10 @@ jobs:
             fi
           done
           # The plain exe too, so Windows users can download it and run it.
+          # The copy without the version gives a download link that always
+          # points at the latest release.
           cp "build/cerlock-$tag-windows-amd64/Cerlock.exe" "dist/cerlock-$tag-windows-amd64.exe"
+          cp "build/cerlock-$tag-windows-amd64/Cerlock.exe" "dist/cerlock-windows-amd64.exe"
           (cd dist && sha256sum * > checksums.txt)
           ls -la dist
 
