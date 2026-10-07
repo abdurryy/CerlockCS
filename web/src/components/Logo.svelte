@@ -1,14 +1,14 @@
 <script lang="ts">
-  // The C of Cerlock drawn as a magnifying glass lens, with a red handle and
-  // a red dot where the crosshair sits.
+  // The C of Cerlock drawn as the lens of a magnifying glass. The handle grows
+  // out of the lower end of the C and the red dot sits where the crosshair is.
   let { size = 28, word = false }: { size?: number; word?: boolean } = $props()
 </script>
 
-<span class="logo">
-  <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-    <path d="M22.4 9.6 A9 9 0 1 0 22.4 22.4" fill="none" stroke="#ece6da" stroke-width="3" stroke-linecap="round" />
-    <path d="M22.6 22.6 L28.5 28.5" stroke="#e5484d" stroke-width="3.6" stroke-linecap="round" />
-    <circle cx="16" cy="16" r="2.2" fill="#e5484d" />
+<span class="logo" role={word ? undefined : 'img'} aria-label={word ? undefined : 'Cerlock'} style:--size="{size}px">
+  <svg width={size} height={size} viewBox="2 2 28 28" aria-hidden="true">
+    <path d="M19.14 6.51A9 9 0 1 0 19.96 19.96" fill="none" stroke="var(--text)" stroke-width="4" />
+    <path d="M19.96 19.96L26.68 26.68" stroke="var(--text)" stroke-width="5" stroke-linecap="round" />
+    <circle cx="13.6" cy="13.6" r="2.5" fill="var(--accent)" />
   </svg>
   {#if word}<span class="word">cerlock</span>{/if}
 </span>
@@ -17,15 +17,23 @@
   .logo {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: calc(var(--size) * 0.3);
+    flex: none;
+  }
+
+  svg {
+    display: block;
+    flex: none;
   }
 
   .word {
-    font-family: var(--serif);
-    font-weight: 600;
-    font-size: 19px;
-    letter-spacing: -0.01em;
-    color: var(--paper);
-    font-variation-settings: 'opsz' 48;
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: calc(var(--size) * 0.84);
+    line-height: 1;
+    letter-spacing: -0.005em;
+    color: var(--text);
+    /* Sit the x-height on the middle of the lens. */
+    transform: translateY(-0.04em);
   }
 </style>

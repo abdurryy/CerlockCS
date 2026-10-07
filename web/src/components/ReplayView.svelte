@@ -5,6 +5,7 @@
   import BriefingPanel from './BriefingPanel.svelte'
   import EvidencePanel from './EvidencePanel.svelte'
   import Hud from './Hud.svelte'
+  import Icon from './Icon.svelte'
   import KillFeed from './KillFeed.svelte'
   import Logo from './Logo.svelte'
   import MapPanel from './MapPanel.svelte'
@@ -19,6 +20,7 @@
   const r = $derived(v.replay)
   let radar: ReturnType<typeof Radar> | undefined = $state()
   let help = $state(false)
+  let dialog: HTMLDivElement | undefined = $state()
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'briefing', label: 'Briefing' },
@@ -29,12 +31,66 @@
     { id: 'map', label: 'Map' },
   ]
 
+  // Keys named left and right are drawn as arrows.
+  const shortcuts: { title: string; rows: { keys: string[]; text: string; or?: boolean }[] }[] = [
+    {
+      title: 'Playback',
+      rows: [
+        { keys: ['Space'], text: 'Play or pause' },
+        { keys: ['left', 'right'], text: 'Back or forward 5 s' },
+        { keys: ['Shift', 'left', 'right'], text: 'Back or forward 1 s' },
+        { keys: ['P', 'N'], text: 'Previous or next round' },
+        { keys: ['[', ']'], text: 'Slower or faster' },
+      ],
+    },
+    {
+      title: 'Players',
+      rows: [
+        { keys: ['1', '0'], text: 'Follow a player', or: true },
+        { keys: ['Esc'], text: 'Stop following' },
+        { keys: ['R'], text: 'Rotate with the followed player' },
+        { keys: ['V'], text: 'Team vision, what they could see' },
+        { keys: ['G'], text: 'Ghosts from other rounds' },
+      ],
+    },
+    {
+      title: 'Map',
+      rows: [
+        { keys: ['E'], text: 'Evidence markers' },
+        { keys: ['C'], text: 'Callouts' },
+        { keys: ['H'], text: 'Names' },
+        { keys: ['L'], text: 'Switch floor' },
+        { keys: ['?'], text: 'Show this list' },
+      ],
+    },
+  ]
+
+  const mouse = [
+    ['Drag', 'Pan the map'],
+    ['Scroll', 'Zoom'],
+    ['Click', 'Follow a player'],
+    ['Double click', 'Reset the view'],
+  ]
+
+  // Team names take the colour of the side they play in the current round.
+  const sides = $derived([r.sideOf(0, v.round), r.sideOf(1, v.round)])
+  const score = $derived([r.match.teams[0].score, r.match.teams[1].score])
+
   // Number keys follow players in the order of the roster.
   const order = $derived([...r.teamPlayers[0].slice(0, 5), ...r.teamPlayers[1].slice(0, 5)])
+
+  $effect(() => {
+    if (help) dialog?.focus()
+  })
+
+  function sideClass(side: number): string {
+    return side === 3 ? 'ct' : side === 2 ? 't' : ''
+  }
 
   function onKey(e: KeyboardEvent) {
     const target = e.target as HTMLElement
     if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') return
+    if (e.ctrlKey || e.metaKey || e.altKey) return
     const k = e.key
     if (k === ' ') {
       e.preventDefault()
@@ -57,9 +113,12 @@
       const p = order[k === '0' ? 9 : Number(k) - 1]
       if (p !== undefined) v.setFollow(p)
     } else if (k === 'Escape') {
+      if (help) {
+        help = false
+        return
+      }
       v.follow = -1
       v.focus = []
-      help = false
     } else if (k === 'r') {
       if (v.follow >= 0) v.rotate = !v.rotate
     } else if (k === 'v') {
@@ -82,19 +141,39 @@
 
 <svelte:window onkeydown={onKey} />
 
+<svelte:head>
+  <title>{mapLabel(r.match.map)} {score[0]}:{score[1]} · Cerlock</title>
+</svelte:head>
+
+{#snippet arrow(dir: 'left' | 'right')}
+  <svg width="11" height="11" viewBox="0 0 12 12" role="img" aria-label={dir === 'left' ? 'Left arrow' : 'Right arrow'}>
+    <path d={dir === 'left' ? 'M10 6H2.5M5.5 2.5 2 6l3.5 3.5' : 'M2 6h7.5M6.5 2.5 10 6 6.5 9.5'} fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+  </svg>
+{/snippet}
+
 <div class="view">
   <header>
-    <a class="home" href="#/" title="Back to case files"><Logo size={24} word /></a>
-    <span class="rule"></span>
+    <a class="home" href="#/" title="Back to case files"><Logo size={22} word /></a>
+    <span class="sep"></span>
     <h1>{mapLabel(r.match.map)}</h1>
-    <span class="case">
-      <span>{r.teamName(0)}</span>
-      <span class="mono score">{r.match.teams[0].score} : {r.match.teams[1].score}</span>
-      <span>{r.teamName(1)}</span>
-    </span>
+    <div class="match" role="group" aria-label="Final score">
+      <span class="final label">Final</span>
+      <span class="team {sideClass(sides[0])}" title={r.teamName(0)}>{r.teamName(0)}</span>
+      <span class="score num">
+        <b class:lost={score[0] < score[1]}>{score[0]}</b>
+        <i>:</i>
+        <b class:lost={score[1] < score[0]}>{score[1]}</b>
+      </span>
+      <span class="team {sideClass(sides[1])}" title={r.teamName(1)}>{r.teamName(1)}</span>
+    </div>
     <span class="spacer"></span>
-    <span class="label">{r.match.rounds.length} rounds · read in {ms(r.parseMs)}</span>
-    <button class="plain keys" title="Keyboard shortcuts (?)" onclick={() => (help = !help)}>?</button>
+    <span class="facts">
+      <span><b class="num">{r.match.rounds.length}</b> rounds</span>
+      <span>read in <b class="num">{ms(r.parseMs)}</b></span>
+    </span>
+    <button class="plain keys" class:on={help} title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" onclick={() => (help = !help)}>
+      <Icon name="keyboard" size={17} />
+    </button>
   </header>
 
   <aside class="roster">
@@ -108,41 +187,60 @@
     <KillFeed {v} />
     <Toolbar {v} level={() => radar?.level() ?? 0} reset={() => radar?.resetCamera()} />
     {#if help}
-      <div class="help" role="dialog">
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+      <div class="scrim" onclick={() => (help = false)}></div>
+      <div class="help" role="dialog" aria-modal="true" aria-labelledby="help-title" tabindex="-1" bind:this={dialog}>
         <div class="help-head">
-          <span class="label">Shortcuts</span>
-          <button class="plain" onclick={() => (help = false)}>close</button>
+          <h2 id="help-title">Keyboard shortcuts</h2>
+          <button class="plain close" title="Close (Esc)" aria-label="Close" onclick={() => (help = false)}>
+            <Icon name="x" size={15} />
+          </button>
         </div>
-        <dl>
-          <dt>Space</dt><dd>Play or pause</dd>
-          <dt>← →</dt><dd>Back or forward 5 s, hold Shift for 1 s</dd>
-          <dt>P N</dt><dd>Previous or next round</dd>
-          <dt>[ ]</dt><dd>Slower or faster</dd>
-          <dt>1 to 0</dt><dd>Follow a player</dd>
-          <dt>Esc</dt><dd>Stop following</dd>
-          <dt>R</dt><dd>Rotate with the followed player</dd>
-          <dt>V</dt><dd>Team vision, only what the team could see</dd>
-          <dt>G</dt><dd>Ghosts from the same moment in other rounds</dd>
-          <dt>E</dt><dd>Evidence markers</dd>
-          <dt>C</dt><dd>Callouts</dd>
-          <dt>H</dt><dd>Names</dd>
-          <dt>L</dt><dd>Switch floor</dd>
-          <dt>Mouse</dt><dd>Drag to pan, scroll to zoom, click a player to follow, double click to reset</dd>
-        </dl>
+        <div class="groups">
+          {#each shortcuts as g (g.title)}
+            <section>
+              <h3 class="label">{g.title}</h3>
+              {#each g.rows as row (row.text)}
+                <div class="row">
+                  <span class="combo">
+                    {#each row.keys as key, i (i)}
+                      {#if row.or && i > 0}<span class="to">to</span>{/if}
+                      <kbd class:wide={key.length > 1 && key !== 'left' && key !== 'right'}>
+                        {#if key === 'left' || key === 'right'}{@render arrow(key)}{:else}{key}{/if}
+                      </kbd>
+                    {/each}
+                  </span>
+                  <span class="what">{row.text}</span>
+                </div>
+              {/each}
+            </section>
+          {/each}
+          <section>
+            <h3 class="label">Mouse</h3>
+            {#each mouse as [how, what] (how)}
+              <div class="row">
+                <span class="combo"><span class="gesture">{how}</span></span>
+                <span class="what">{what}</span>
+              </div>
+            {/each}
+          </section>
+        </div>
       </div>
     {/if}
   </section>
 
   <aside class="side">
-    <nav>
-      {#each tabs as t (t.id)}
-        <button class="tab" class:active={v.tab === t.id} onclick={() => (v.tab = t.id)}>
-          {t.label}
-          {#if t.id === 'evidence' && r.blunders.length}<span class="count">{r.blunders.length}</span>{/if}
-        </button>
-      {/each}
+    <nav aria-label="Analysis">
+      <div class="tabs" role="tablist">
+        {#each tabs as t (t.id)}
+          <button class="tab" class:active={v.tab === t.id} role="tab" aria-selected={v.tab === t.id} onclick={() => (v.tab = t.id)}>
+            <span>{t.label}</span>
+            {#if t.id === 'evidence' && r.blunders.length}<span class="count num" title="{r.blunders.length} pieces of evidence">{r.blunders.length}</span>{/if}
+          </button>
+        {/each}
+      </div>
     </nav>
-    <div class="tab-body">
+    <div class="tab-body" role="tabpanel">
       {#if v.tab === 'briefing'}
         <BriefingPanel {v} />
       {:else if v.tab === 'evidence'}
@@ -169,77 +267,174 @@
     height: 100%;
     display: grid;
     grid-template-columns: 280px minmax(0, 1fr) 410px;
-    grid-template-rows: 50px minmax(0, 1fr) auto;
+    grid-template-rows: 48px minmax(0, 1fr) auto;
     grid-template-areas:
       'head head head'
       'roster stage side'
       'foot foot foot';
+    background: var(--bg);
   }
+
+  /* Header */
 
   header {
     grid-area: head;
     display: flex;
     align-items: center;
-    gap: 14px;
-    padding: 0 16px;
-    border-bottom: 1px solid var(--rule);
-    background: var(--ink);
+    gap: 16px;
+    padding: 0 12px 0 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface);
+    min-width: 0;
   }
 
   .home {
-    text-decoration: none;
     display: inline-flex;
+    align-items: center;
+    height: 32px;
+    padding: 0 6px;
+    margin-left: -6px;
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    transition: background 0.12s;
   }
 
-  .rule {
+  .home:hover {
+    background: var(--surface-2);
+  }
+
+  .sep {
     width: 1px;
-    height: 22px;
-    background: var(--rule-2);
+    height: 20px;
+    background: var(--line-2);
+    flex: none;
   }
 
   h1 {
-    font-size: 20px;
-    font-variation-settings: 'opsz' 48;
+    font-size: 19px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.01em;
+    flex: none;
   }
 
-  .case {
+  .match {
     display: flex;
+    align-items: center;
     gap: 10px;
-    align-items: baseline;
-    color: var(--graphite);
     min-width: 0;
+    height: 28px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--bg);
+    border: 1px solid var(--line);
+  }
+
+  .final {
+    font-size: 10px;
+    padding-right: 10px;
+    border-right: 1px solid var(--line-2);
+    line-height: 14px;
+  }
+
+  .team {
+    font-family: var(--display);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-2);
+    max-width: 220px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    transition: color 0.3s;
+  }
+
+  .team.ct {
+    color: var(--ct);
+  }
+
+  .team.t {
+    color: var(--t);
   }
 
   .score {
-    color: var(--paper);
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    font-family: var(--display);
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1;
+    flex: none;
+  }
+
+  .score b {
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .score b.lost {
+    color: var(--text-3);
+  }
+
+  .score i {
+    font-style: normal;
+    color: var(--text-3);
+    font-weight: 600;
+    transform: translateY(-1px);
   }
 
   .spacer {
     flex: 1;
   }
 
-  .keys {
-    font-family: var(--mono);
-    width: 26px;
-    height: 26px;
-    padding: 0;
+  .facts {
+    display: flex;
+    gap: 16px;
+    flex: none;
+    font-size: 12.5px;
+    color: var(--text-3);
+    white-space: nowrap;
   }
+
+  .facts b {
+    font-family: var(--display);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-2);
+  }
+
+  .keys {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-2);
+    flex: none;
+  }
+
+  .keys:hover,
+  .keys.on {
+    color: var(--text);
+  }
+
+  /* Columns */
 
   .roster {
     grid-area: roster;
     overflow-y: auto;
-    border-right: 1px solid var(--rule);
-    background: var(--desk);
+    border-right: 1px solid var(--line);
+    background: var(--surface);
   }
 
   .stage {
     grid-area: stage;
     position: relative;
     min-height: 0;
-    background: var(--ink);
+    min-width: 0;
+    background: var(--bg);
   }
 
   .side {
@@ -247,52 +442,95 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    border-left: 1px solid var(--rule);
-    background: var(--desk);
+    min-width: 0;
+    border-left: 1px solid var(--line);
+    background: var(--surface);
   }
 
+  /* Tabs */
+
   nav {
+    flex: none;
+  }
+
+  .tabs {
     display: flex;
-    justify-content: space-between;
-    padding: 0 8px;
-    border-bottom: 1px solid var(--rule);
+    height: 42px;
+    padding: 0 6px;
+    border-bottom: 1px solid var(--line);
     overflow-x: auto;
+    scrollbar-width: none;
   }
 
   .tab {
+    position: relative;
+    flex: 1 1 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 100%;
+    padding: 0 7px;
     border: none;
-    border-bottom: 2px solid transparent;
     border-radius: 0;
-    padding: 12px 5px 10px;
-    font-family: var(--mono);
-    font-size: 10px;
-    font-weight: 500;
+    background: transparent;
+    font-family: var(--display);
+    font-size: 12.5px;
+    font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--pencil);
+    color: var(--text-3);
     white-space: nowrap;
-    display: inline-flex;
-    gap: 5px;
-    align-items: center;
+  }
+
+  .tab::after {
+    content: '';
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    bottom: -1px;
+    height: 2px;
+    border-radius: 2px 2px 0 0;
+    background: transparent;
+    transition: background 0.15s;
   }
 
   .tab:hover {
     background: transparent;
-    color: var(--graphite);
+    color: var(--text-2);
   }
 
   .tab.active {
-    color: var(--paper);
-    border-bottom-color: var(--marker);
+    color: var(--text);
+  }
+
+  .tab.active::after {
+    background: var(--accent);
+  }
+
+  .tab:focus-visible {
+    outline-offset: -4px;
   }
 
   .count {
-    font-size: 9.5px;
-    color: var(--ink);
+    min-width: 18px;
+    height: 16px;
+    padding: 0 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
     background: var(--evidence);
-    border-radius: 2px;
-    padding: 0 3px;
+    color: #1a1406;
+    font-size: 11px;
+    font-weight: 700;
     letter-spacing: 0;
+    line-height: 1;
+  }
+
+  .tab:not(.active) .count {
+    background: rgba(255, 194, 71, 0.16);
+    color: var(--evidence);
   }
 
   .tab-body {
@@ -303,52 +541,130 @@
 
   footer {
     grid-area: foot;
-    border-top: 1px solid var(--rule);
-    background: var(--desk);
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+    min-width: 0;
+  }
+
+  /* Shortcuts */
+
+  .scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    background: rgba(11, 13, 17, 0.62);
   }
 
   .help {
     position: absolute;
-    top: 70px;
+    top: 50%;
     left: 50%;
-    transform: translateX(-50%);
-    background: rgba(21, 23, 27, 0.98);
-    border: 1px solid var(--rule-2);
-    border-radius: 3px;
-    padding: 14px 18px;
-    width: min(480px, 92%);
-    z-index: 5;
-    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+    transform: translate(-50%, -50%);
+    z-index: 21;
+    width: min(660px, calc(100% - 32px));
+    max-height: calc(100% - 32px);
+    overflow-y: auto;
+    background: var(--surface);
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+  }
+
+  .help:focus {
+    outline: none;
   }
 
   .help-head {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    padding: 12px 12px 12px 20px;
+    border-bottom: 1px solid var(--line);
   }
 
-  .help-head button {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--graphite);
+  h2 {
+    font-size: 16px;
+    font-weight: 700;
   }
 
-  dl {
+  .close {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-2);
+  }
+
+  .close:hover {
+    color: var(--text);
+  }
+
+  .groups {
     display: grid;
-    grid-template-columns: 90px 1fr;
-    gap: 7px 14px;
-    margin: 12px 0 0;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px 28px;
+    padding: 16px 20px 20px;
   }
 
-  dt {
-    font-family: var(--mono);
-    color: var(--paper);
+  h3 {
+    margin-bottom: 8px;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 88px minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+    min-height: 28px;
+  }
+
+  .combo {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 5px;
+    font-family: var(--display);
     font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--text);
+    background: var(--surface-3);
+    border: 1px solid var(--line-2);
+    border-bottom-width: 2px;
+    border-radius: var(--radius-sm);
   }
 
-  dd {
-    margin: 0;
-    color: var(--graphite);
+  kbd.wide {
+    padding: 0 7px;
+  }
+
+  .to {
+    font-size: 11px;
+    color: var(--text-3);
+    padding: 0 2px;
+  }
+
+  .gesture {
+    font-family: var(--display);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .what {
+    color: var(--text-2);
+    font-size: 13px;
+    line-height: 1.3;
   }
 
   @media (max-width: 1280px) {
@@ -356,26 +672,74 @@
       grid-template-columns: 240px minmax(0, 1fr) 370px;
     }
 
+    .team {
+      max-width: 150px;
+    }
+
+    .tabs {
+      padding: 0 2px;
+    }
+
     .tab {
-      padding: 12px 3px 10px;
-      letter-spacing: 0.02em;
+      padding: 0 5px;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+    }
+
+    .tab::after {
+      left: 4px;
+      right: 4px;
+    }
+  }
+
+  @media (max-width: 1100px) {
+    .facts {
+      display: none;
     }
   }
 
   @media (max-width: 960px) {
     .view {
-      grid-template-columns: 1fr;
-      grid-template-rows: 50px 62vh auto auto auto;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: 48px 62vh auto auto auto;
       grid-template-areas: 'head' 'stage' 'foot' 'roster' 'side';
       height: auto;
     }
 
-    .case {
-      display: none;
+    .team {
+      max-width: 130px;
+    }
+
+    .roster {
+      border-right: none;
+      border-top: 1px solid var(--line);
     }
 
     .side {
       min-height: 520px;
+      border-left: none;
+      border-top: 1px solid var(--line);
+    }
+
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 6;
+      background: var(--surface);
+    }
+
+    .groups {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 640px) {
+    header {
+      gap: 12px;
+    }
+
+    .match {
+      display: none;
     }
   }
 </style>
