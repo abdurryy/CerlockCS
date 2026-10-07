@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="web/src/assets/brand/lockup-dark.svg">
+    <img alt="Cerlock" src="web/src/assets/brand/lockup-light.svg" height="72">
+  </picture>
+</p>
+
 # CerlockCS
 
 A fast CS2 demo viewer and review tool for teams.
@@ -151,7 +158,10 @@ Teams in ESEA often have few league games to look at, but their players queue FA
 1. Create a FACEIT API key: sign in at [developers.faceit.com](https://developers.faceit.com), make an app and add a server side API key. Paste it into Cerlock's settings. It is saved in `settings.json` in the data folder, readable only by your user, and never sent back to the browser.
 2. Paste the opponent's match room link (`https://www.faceit.com/en/cs2/room/1-...`) or their team page. Cerlock lists both teams with their players.
 3. Cerlock walks the last 100 matches of every player and keeps the ones where at least four of them were on the same side, newest first, with the map, the score and a link to the match room.
-4. Get the demos. Downloading demos through the API needs an extra permission from FACEIT that a normal key does not have, so download them from the match rooms and drop them into Cerlock. They are matched to the players by SteamID. If your key does have download access, Cerlock downloads them itself into `demos/faceit` in the data folder.
+4. Get the demos. Downloading demos through the API needs an extra permission from FACEIT that a normal key does not have, so open each match room and click "Watch demo". Cerlock watches your Downloads folder and picks up FACEIT demos by itself (turn it off with `--downloads=false`), or you can drop them in. They are matched to the players by SteamID. If your key does have download access, Cerlock downloads them itself into `demos/faceit` in the data folder.
+5. Build the report. For every map you get a set of PNG images in one style, with the team or player name in the top corner and the Cerlock logo in the other: a summary card, the whole team on CT and T, T executes per site with the utility and plants, post plant and retake positions, opening duels, utility with throw lines, pistol and eco rounds, AWP spots, kills and deaths, and per player their early CT and T positions. Download them one by one or as a zip per map.
+
+The same exports work on a single demo: open it, go to the Players tab and use "Export heatmaps" to get one image per player of the team you pick.
 
 The key can also be given with `--faceit-key` or the `FACEIT_API_KEY` environment variable. A key saved in the settings wins.
 
@@ -250,6 +260,9 @@ The look is meant to feel like a case file on a dark desk instead of an esports 
 - Radar images and overview data belong to Valve. They are not stored in this repository
 - Test demos from the demoinfocs test set ([cs-demos-2](https://gitlab.com/markus-wa/cs-demos-2))
 - Fonts: [Fraunces](https://github.com/undercasetype/Fraunces), [IBM Plex Sans and IBM Plex Mono](https://github.com/IBM/plex), all under the SIL Open Font License, bundled through Fontsource
+
+- Weapon, utility and killfeed icons belong to Valve. Like the radar images they are not stored here: Cerlock downloads them on first use from [drweissbrot/cs-hud](https://github.com/drweissbrot/cs-hud) and [akiver/cs-demo-manager](https://github.com/akiver/cs-demo-manager), or you can export them from your own game files with `scripts/extract-icons.sh`
+- The CERLOCK wordmark is drawn from [Exo 2](https://github.com/NDISCOVER/Exo-2.0) (SIL Open Font License)
 
 ## License
 
