@@ -18,10 +18,10 @@ The name is Sherlock with the "Sh" swapped for the C in CS. A demo is treated li
 ## Features
 
 **Replay**
-- Players drawn as small pins that point where they look, with health, weapon, utility and money
+- Players as round tokens in their team colour with a pointer for where they look, a health ring, and the real CS2 icons for weapons, grenades, armor, kit and bomb in the roster and the killfeed (with headshot, wallbang, no-scope, through smoke and blind icons)
 - Smokes with a countdown ring, molotov fire, HE and flash pops, grenade trajectories, shot tracers, kill lines and the bomb
 - Lines from each flash to the players it blinded, with the blind time (red if it was a teammate)
-- Callout names on the map (Ramp, Heaven, Outside...) taken from the demo itself, and site letters where the bomb was planted
+- Callout names on the map (Ramp, Heaven, Outside...) taken from the demo itself, and the game's A and B badges on the bombsites
 - Follow a player by clicking them or pressing 1 to 0. Optionally rotate the map with their view
 - Team vision: only show the enemies the followed player's team could actually see
 - Ghosts: where a team stood at the same point in every other round on the same side, good for spotting setups and habits
@@ -68,8 +68,14 @@ Every mistake has a cost: how much the team's chance to win the round dropped be
 
 ![Aim](docs/aim.png)
 
+**Scouting**
+- Find the games an opponent played together on FACEIT and turn their demos into a report per map, with PNG images ready to share. See [Scouting a team](#scouting-a-team)
+
+![Library](docs/library.png)
+
 **Library**
 - Drag and drop a demo, or point the server at a folder (for example your CS2 replays folder) and new demos are parsed in the background
+- FACEIT demos you download in the browser are picked up from your Downloads folder by themselves
 - Reads `.dem` as well as compressed `.dem.gz`, `.dem.bz2` and `.dem.zst` (FACEIT and Valve MM)
 
 ## Speed
@@ -102,7 +108,7 @@ Before picking the parser I also tried demoparser2 (Rust) on the same 299 MB dem
 | --- | --- | --- |
 | Demo parsing | Go + [demoinfocs-golang](https://github.com/markus-wa/demoinfocs-golang) | Mature CS2 parser with a full game state (grenades, infernos, spotted flags, view angles), easy to run everything in one pass |
 | Server | Go standard library | One binary with the frontend embedded, nothing else to install |
-| Frontend | Svelte 5, TypeScript, Vite | Small bundle (about 57 kB of gzipped JS) and fine grained updates |
+| Frontend | Svelte 5, TypeScript, Vite | Small bundle (about 130 kB of gzipped JS) and fine grained updates |
 | Rendering | Canvas 2D | Plenty for 10 players and a few dozen effects at 60 fps, no WebGL needed |
 | Replay format | Own binary format | Typed columns that load straight into the browser |
 
@@ -160,6 +166,13 @@ Teams in ESEA often have few league games to look at, but their players queue FA
 3. Cerlock walks the last 100 matches of every player and keeps the ones where at least four of them were on the same side, newest first, with the map, the score and a link to the match room.
 4. Get the demos. Downloading demos through the API needs an extra permission from FACEIT that a normal key does not have, so open each match room and click "Watch demo". Cerlock watches your Downloads folder and picks up FACEIT demos by itself (turn it off with `--downloads=false`), or you can drop them in. They are matched to the players by SteamID. If your key does have download access, Cerlock downloads them itself into `demos/faceit` in the data folder.
 5. Build the report. For every map you get a set of PNG images in one style, with the team or player name in the top corner and the Cerlock logo in the other: a summary card, the whole team on CT and T, T executes per site with the utility and plants, post plant and retake positions, opening duels, utility with throw lines, pistol and eco rounds, AWP spots, kills and deaths, and per player their early CT and T positions. Download them one by one or as a zip per map.
+
+![Scout report](docs/scout.png)
+
+<p>
+  <img src="docs/poster-summary.png" width="49%" alt="Summary card">
+  <img src="docs/poster-execute.png" width="49%" alt="A execute">
+</p>
 
 The same exports work on a single demo: open it, go to the Players tab and use "Export heatmaps" to get one image per player of the team you pick.
 
@@ -236,7 +249,7 @@ make test    # go vet, go test, svelte-check and vitest
 ## Project layout
 
 ```
-cmd/cerlock          CLI and server entry point
+cmd/cerlock          CLI, server and the Windows app window
 internal/parse       single pass demo parser built on demoinfocs
 internal/aim         duel windows and aim metrics
 internal/analysis    stats, findings, mistakes, win chance and round notes
@@ -245,22 +258,22 @@ internal/replay      replay file writer
 internal/maps        overview files, radar images and the map cache
 internal/pipeline    decompress, parse, analyse, write
 internal/faceit      FACEIT API client and the search for games played together
+internal/icons       weapon and killfeed icons, downloaded and cached
 internal/server      HTTP API, library and background parsing
 web/                 Svelte frontend
-scripts/             radar export from your own game files
+scripts/             radar and icon export from your own game files
 ```
 
 ## Design
 
-The look is meant to feel like a case file on a dark desk instead of an esports overlay or a generic dashboard. Warm off-white text, one red for marking things, a yellow for evidence, and steel blue and ochre for the two sides. Fraunces for headings, IBM Plex Sans for text and IBM Plex Mono for numbers. The full notes are in [docs/BRAND.md](docs/BRAND.md).
+Dark, sharp and close to the game's own HUD, without looking like an esports overlay or a generic dashboard. The map, the players and the utility get the colour, the interface around them stays calm. One red for what matters, amber for evidence, blue and gold for the two sides, Barlow and Barlow Semi Condensed for all text, and the real CS2 icons for anything in the game. The logo is a CT operator holding a magnifying glass. The full notes are in [docs/BRAND.md](docs/BRAND.md).
 
 ## Credits
 
 - [demoinfocs-golang](https://github.com/markus-wa/demoinfocs-golang) for the demo parsing
 - Radar images and overview data belong to Valve. They are not stored in this repository
 - Test demos from the demoinfocs test set ([cs-demos-2](https://gitlab.com/markus-wa/cs-demos-2))
-- Fonts: [Fraunces](https://github.com/undercasetype/Fraunces), [IBM Plex Sans and IBM Plex Mono](https://github.com/IBM/plex), all under the SIL Open Font License, bundled through Fontsource
-
+- Fonts: [Barlow and Barlow Semi Condensed](https://github.com/jpt/barlow) under the SIL Open Font License, bundled through Fontsource
 - Weapon, utility and killfeed icons belong to Valve. Like the radar images they are not stored here: Cerlock downloads them on first use from [drweissbrot/cs-hud](https://github.com/drweissbrot/cs-hud) and [akiver/cs-demo-manager](https://github.com/akiver/cs-demo-manager), or you can export them from your own game files with `scripts/extract-icons.sh`
 - The CERLOCK wordmark is drawn from [Exo 2](https://github.com/NDISCOVER/Exo-2.0) (SIL Open Font License)
 
