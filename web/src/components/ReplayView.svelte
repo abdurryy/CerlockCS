@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { mapLabel, ms } from '../lib/format'
+  import { mapLabel } from '../lib/format'
   import { SPEEDS, type Tab, type Viewer } from '../lib/viewer.svelte'
   import BallisticsPanel from './BallisticsPanel.svelte'
   import BriefingPanel from './BriefingPanel.svelte'
@@ -169,7 +169,6 @@
     <span class="spacer"></span>
     <span class="facts">
       <span><b class="num">{r.match.rounds.length}</b> rounds</span>
-      <span>read in <b class="num">{ms(r.parseMs)}</b></span>
     </span>
     <button class="plain keys" class:on={help} title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" onclick={() => (help = !help)}>
       <Icon name="keyboard" size={17} />
