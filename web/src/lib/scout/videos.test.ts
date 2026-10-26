@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { lengthSeconds, sizeOf, teamFolder, videoPath } from './videos'
+import { layoutOf, lengthSeconds, sizeOf, teamFolder, videoPath } from './videos'
 
 describe('videoPath', () => {
   it('puts each video in team, map and side folders', () => {
@@ -22,5 +22,14 @@ describe('videoPath', () => {
     expect(sizeOf('nope').w).toBe(1920)
     expect(lengthSeconds('round')).toBe(0)
     expect(lengthSeconds('30')).toBe(30)
+  })
+})
+
+describe('layoutOf', () => {
+  it('splits by player once there are many rounds', () => {
+    expect(layoutOf('auto', 3)).toBe('together')
+    expect(layoutOf('auto', 4)).toBe('players')
+    expect(layoutOf('together', 10)).toBe('together')
+    expect(layoutOf('players', 1)).toBe('players')
   })
 })

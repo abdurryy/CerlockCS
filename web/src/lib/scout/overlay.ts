@@ -38,6 +38,10 @@ import type { MapScout, RoleCard, Situation, SituationTrack, TrackEvent, TrackPl
 // time there, a number shows that floor alone.
 export type FloorMode = 'auto' | 'both' | number
 
+// 'together' puts everyone on one map, 'players' gives every player a map
+// of their own.
+export type OverlayLayout = 'together' | 'players'
+
 export interface OverlayOptions {
   // Tracks to show, by index into situation.tracks. All when left out.
   rounds?: readonly number[] | null
@@ -48,6 +52,7 @@ export interface OverlayOptions {
   trail?: number
   // Cuts the time bar at this many seconds, for a shorter video.
   length?: number
+  layout?: OverlayLayout
 }
 
 const TEXT_3 = '#6e7883'
@@ -75,6 +80,15 @@ const DECOY_SHOW = 2
 const CONE = 0.42
 // Seconds a round takes to fade out once it is over.
 const ENDED_FADE = 1.5
+// With this many rounds on screen, kill lines, flash pops and the dead
+// are left out and trails get shorter, or the map is a mess.
+const BUSY = 3
+const BUSY_TRAIL = 1.2
+const BUSY_AREA = 0.5
+// Seconds a dead player stays on a busy map.
+const DEAD_SHOW = 3
+// Room above each player's map for their name.
+const PANEL_LABEL = 30
 
 // Layout units. Wide frames are laid out on 1920 x 1080, square ones on
 // the posters' 1600 grid.
@@ -192,6 +206,8 @@ interface Ev {
 interface PPlayer {
   p: TrackPlayer
   levels: Uint8Array
+  // Seconds after freeze time when they died, Infinity when they lived.
+  died: number
 }
 
 interface PTrack {
@@ -209,6 +225,8 @@ interface Panel {
   v: View
   // The floor's area on screen, for its label.
   box: Rect
+  // The player this map is for, with layout 'players'.
+  player?: Legend
 }
 
 interface Layout {
@@ -216,6 +234,7 @@ interface Layout {
   h: number
   u: number
   wide: boolean
+  byPlayer: boolean
   panels: Panel[]
   map: Rect
   // The clock, the time bar and where the dynamic parts go.
@@ -305,6 +324,8 @@ export class Overlay {
   readonly step: number
   // The length of the rounds on screen, for the time bar.
   private span = 0
+  // Many rounds on screen this frame: draw less.
+  private busy = false
   // Called when something that was loading is in, so a paused view can
   // redraw.
   onchange: (() => void) | null = null
@@ -319,7 +340,7 @@ export class Overlay {
   private bg: { key: string; canvas: HTMLCanvasElement; layout: Layout } | null = null
   // What the last frame was asked for, so a frame like the one before
   // skips the checks.
-  private last = { w: 0, h: 0, rounds: null as OverlayOptions['rounds'], floors: undefined as FloorMode | undefined, hi: undefined as string | null | undefined, length: undefined as number | undefined, vis: [] as PTrack[] }
+  private last = { w: 0, h: 0, rounds: null as OverlayOptions['rounds'], floors: undefined as FloorMode | undefined, hi: undefined as string | null | undefined, length: undefined as number | undefined, layout: undefined as OverlayLayout | undefined, vis: [] as PTrack[] }
   private pt = new Float64Array(5)
   private trailX = new Float64Array(0)
   private trailY = new Float64Array(0)
@@ -343,7 +364,7 @@ export class Overlay {
       for (let i = 0; i < l.length; i++) s += l[i]
       return s
     })
-    this.tracks = situation.tracks.map((tr) => prepTrack(tr, info))
+    this.tracks = situation.tracks.map((tr) => prepTrack(tr, info, this.step))
     this.legend = legendOf(scout.roles, situation)
     this.smoke = smokeSprite()
     this.fire = fireSprite()
@@ -419,7 +440,7 @@ export class Overlay {
     const ctx = target.getContext('2d') as CanvasRenderingContext2D | null
     if (!ctx) return
     const last = this.last
-    const same = !!this.bg && last.w === w && last.h === h && last.rounds === opts.rounds && last.floors === opts.floors && last.hi === opts.highlight && last.length === opts.length
+    const same = !!this.bg && last.w === w && last.h === h && last.rounds === opts.rounds && last.floors === opts.floors && last.hi === opts.highlight && last.length === opts.length && last.layout === opts.layout
     const vis = same ? last.vis : this.visible(opts)
     if (!same) this.span = lengthOf(vis.map((v) => v.track), opts.length && opts.length > 0 ? Math.min(opts.length, this.duration) : this.duration)
     const bg = same ? this.bg! : this.background(w, h, opts, vis)
@@ -429,6 +450,7 @@ export class Overlay {
     last.floors = opts.floors
     last.hi = opts.highlight
     last.length = opts.length
+    last.layout = opts.layout
     last.vis = vis
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.globalAlpha = 1
@@ -439,6 +461,7 @@ export class Overlay {
     const hi = opts.highlight ?? null
     // Rounds that are over fade out and then leave the map.
     const on = vis.filter((tr) => fadeOf(tr.track, time) > 0)
+    this.busy = vis.length >= BUSY
     // Clip to the map area so nothing runs into the side column.
     ctx.save()
     ctx.beginPath()
@@ -447,7 +470,7 @@ export class Overlay {
     for (const tr of on) this.drawAreas(ctx, L, tr, time, hi)
     for (const tr of on) this.drawPops(ctx, L, tr, time, hi)
     for (const tr of on) this.drawMarks(ctx, L, tr, time, hi)
-    const trail = Math.max(0, opts.trail ?? TRAIL)
+    const trail = Math.min(this.busy ? BUSY_TRAIL : Infinity, Math.max(0, opts.trail ?? TRAIL))
     // View cones only when they stay readable: one round, or the
     // highlighted player.
     const cones = vis.length === 1
@@ -456,7 +479,7 @@ export class Overlay {
       for (const pp of tr.players) if (!hi || pp.p.steamId !== hi) this.drawPlayer(ctx, L, pp, time, trail, (hi ? FADED : 1) * f, false, cones && !hi)
     }
     if (hi) for (const tr of on) for (const pp of tr.players) if (pp.p.steamId === hi) this.drawPlayer(ctx, L, pp, time, trail, fadeOf(tr.track, time), true, true)
-    if (vis.length === 1 && on.length) this.drawNames(ctx, L, vis[0], time, hi)
+    if (vis.length === 1 && on.length && !L.byPlayer) this.drawNames(ctx, L, vis[0], time, hi)
     ctx.restore()
     if (!vis.length) this.drawEmpty(ctx, L)
     this.drawClock(ctx, L, time)
@@ -466,9 +489,10 @@ export class Overlay {
 
   private background(w: number, h: number, opts: OverlayOptions, vis: PTrack[]): { canvas: HTMLCanvasElement; layout: Layout } {
     const floors = floorsFor(this.heights, opts.floors ?? 'auto')
-    const key = [w, h, floors.join(','), opts.highlight ?? '', this.span, vis.map((v) => this.tracks.indexOf(v)).join(',')].join('|')
+    const byPlayer = opts.layout === 'players' && this.legend.length > 1
+    const key = [w, h, floors.join(','), opts.highlight ?? '', this.span, byPlayer, vis.map((v) => this.tracks.indexOf(v)).join(',')].join('|')
     if (this.bg && this.bg.key === key) return this.bg
-    const layout = this.layoutFor(w, h, floors)
+    const layout = byPlayer ? this.playersLayout(w, h, floors[0]) : this.layoutFor(w, h, floors)
     const canvas = this.bg && this.bg.canvas.width === w && this.bg.canvas.height === h ? this.bg.canvas : canvasOf(w, h)
     const ctx = canvas.getContext('2d')!
     ctx.setTransform(1, 0, 0, 1, 0, 0)
@@ -479,11 +503,7 @@ export class Overlay {
   }
 
   private layoutFor(w: number, h: number, floors: number[]): Layout {
-    const wide = w / h >= 1.25
-    const u = wide ? Math.min(w / WIDE_W, h / WIDE_H) : Math.min(w, h) / SQUARE
-    const map: Rect = wide
-      ? { x: 600 * u, y: 150 * u, w: w - 600 * u - 48 * u, h: h - 150 * u - 36 * u }
-      : { x: 48 * u, y: 272 * u, w: w - 96 * u, h: h - 272 * u - 262 * u }
+    const { u, wide, map } = this.frame(w, h)
     const pad = 12
     const boxes: Box[] = floors.map((l) => {
       if (floors.length === 1) return this.stage.box
@@ -497,9 +517,61 @@ export class Overlay {
       const b = boxes[i]
       return { level, v, box: { x: v.ox + b[0] * v.k, y: v.oy + b[1] * v.k, w: (b[2] - b[0]) * v.k, h: (b[3] - b[1]) * v.k } }
     })
+    return { w, h, u, wide, byPlayer: false, panels, map, ...this.clockAt(h, u, wide) }
+  }
+
+  private frame(w: number, h: number): { u: number; wide: boolean; map: Rect } {
+    const wide = w / h >= 1.25
+    const u = wide ? Math.min(w / WIDE_W, h / WIDE_H) : Math.min(w, h) / SQUARE
+    const map: Rect = wide
+      ? { x: 600 * u, y: 150 * u, w: w - 600 * u - 48 * u, h: h - 150 * u - 36 * u }
+      : { x: 48 * u, y: 272 * u, w: w - 96 * u, h: h - 272 * u - 262 * u }
+    return { u, wide, map }
+  }
+
+  private clockAt(h: number, u: number, wide: boolean): Pick<Layout, 'clock' | 'bar'> {
     const clock = wide ? { x: 64 * u, y: 352 * u, size: 116 * u } : { x: 72 * u, y: h - 150 * u, size: 64 * u }
     const bar = wide ? { x: 64 * u, y: 398 * u, w: 470 * u } : { x: 232 * u, y: h - 172 * u, w: 230 * u }
-    return { w, h, u, wide, panels, map, clock, bar }
+    return { clock, bar }
+  }
+
+  // playersLayout gives every player their own map of one floor, in a
+  // grid with the most room for each.
+  private playersLayout(w: number, h: number, level: number): Layout {
+    const { u, wide, map } = this.frame(w, h)
+    const pad = 12
+    const f = this.stage.floors.length > 1 ? this.stage.floors[level] : null
+    const b: Box = f ? [f.box[0] - pad, f.box[1] - pad, f.box[2] + pad, f.box[3] + pad] : this.stage.box
+    const players = this.legend
+    const n = players.length
+    const gap = 18 * u
+    const top = PANEL_LABEL * u
+    const bw = b[2] - b[0]
+    const bh = b[3] - b[1]
+    let best = { cols: 1, k: 0 }
+    for (let cols = 1; cols <= n; cols++) {
+      const rows = Math.ceil(n / cols)
+      const k = Math.min((map.w - gap * (cols - 1)) / (cols * bw), (map.h - gap * (rows - 1) - top * rows) / (rows * bh))
+      if (k > best.k) best = { cols, k }
+    }
+    const { cols, k } = best
+    const rows = Math.ceil(n / cols)
+    const cw = bw * k
+    const ch = bh * k + top
+    const x0 = map.x + (map.w - (cols * cw + gap * (cols - 1))) / 2
+    const y0 = map.y + (map.h - (rows * ch + gap * (rows - 1))) / 2
+    const panels: Panel[] = players.map((player, i) => {
+      const r = Math.floor(i / cols)
+      // The last row is centred when it is not full.
+      const inRow = r === rows - 1 ? n - r * cols : cols
+      const c = i - r * cols
+      const rx = x0 + ((cols - inRow) * (cw + gap)) / 2
+      const x = rx + c * (cw + gap)
+      const y = y0 + r * (ch + gap) + top
+      const v: View = { k, ox: x - b[0] * k, oy: y - b[1] * k }
+      return { level, v, box: { x, y, w: cw, h: bh * k }, player }
+    })
+    return { w, h, u, wide, byPlayer: true, panels, map, ...this.clockAt(h, u, wide) }
   }
 
   private paintStatic(ctx: CanvasRenderingContext2D, L: Layout, opts: OverlayOptions, vis: PTrack[]) {
@@ -517,8 +589,9 @@ export class Overlay {
     ctx.fillStyle = glow
     ctx.fillRect(0, 0, w, h)
     const first = L.panels[0]
-    gridLines(ctx, info, first.v, { x: L.map.x - 24 * u, y: L.map.y - 24 * u, w: L.map.w + 48 * u, h: L.map.h + 48 * u }, u, L.wide ? 'xy' : 'y')
-    const split = L.panels.length > 1
+    if (!L.byPlayer) gridLines(ctx, info, first.v, { x: L.map.x - 24 * u, y: L.map.y - 24 * u, w: L.map.w + 48 * u, h: L.map.h + 48 * u }, u, L.wide ? 'xy' : 'y')
+    // Side by side floors. Player maps each show the whole radar.
+    const split = L.panels.length > 1 && !L.byPlayer
     const lu = u * (L.wide ? 0.92 : 1)
     for (const p of L.panels) {
       const floor = st.floors[p.level] ?? st.floors[0] ?? null
@@ -544,8 +617,28 @@ export class Overlay {
         ctx.drawImage(sc.canvas, 0, 0)
         ctx.restore()
       } else if (floor) drawFloor(ctx, floor, p.v, u)
-      drawLabels(ctx, st, p.level, p.v, lu, [], [], vis.length > 3)
-      if (split) {
+      drawLabels(ctx, st, p.level, p.v, L.byPlayer ? lu * Math.min(1, Math.max(0.7, p.v.k * 1.4)) : lu, [], [], L.byPlayer || vis.length > 3)
+      if (p.player) {
+        // The player's name over their map, in their colour.
+        const x = p.box.x
+        const y = p.box.y - 9 * u
+        ctx.fillStyle = p.player.color
+        circle(ctx, x + 6 * u, y - 6 * u, 5 * u)
+        ctx.fill()
+        font(ctx, 700, 19, u, 0.01)
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'alphabetic'
+        ctx.fillStyle = TEXT
+        const name = fitText(ctx, p.player.name, p.box.w * 0.6)
+        ctx.fillText(name, x + 18 * u, y)
+        if (p.player.role) {
+          const nw = ctx.measureText(name).width
+          font(ctx, 600, 15, u, 0.02)
+          ctx.fillStyle = TEXT_3
+          ctx.fillText(fitText(ctx, p.player.role, p.box.w - nw - 32 * u), x + 30 * u + nw, y)
+        }
+        setSpacing(ctx, '0px')
+      } else if (split) {
         font(ctx, 600, 15, u, 0.14)
         ctx.fillStyle = TEXT_3
         ctx.textAlign = 'center'
@@ -809,7 +902,13 @@ export class Overlay {
 
   // at maps a radar position on a floor to the panel it is drawn on and
   // its alpha there.
-  private at(L: Layout, level: number): { p: Panel; a: number } | null {
+  // at is the map a thing on this floor goes on, with how strongly to
+  // draw it. On player maps, things go on the map of the player id.
+  private at(L: Layout, level: number, id = ''): { p: Panel; a: number } | null {
+    if (L.byPlayer) {
+      const p = L.panels.find((q) => q.player?.id === id)
+      return p ? { p, a: level === p.level ? 1 : OFF_FLOOR } : null
+    }
     if (L.panels.length === 1) return { p: L.panels[0], a: level === L.panels[0].level ? 1 : OFF_FLOOR }
     for (const p of L.panels) if (p.level === level) return { p, a: 1 }
     return { p: L.panels[0], a: OFF_FLOOR }
@@ -822,7 +921,7 @@ export class Overlay {
       if (t < e.t) continue
       const stop = e.until ?? e.t + (e.kind === 'smoke' ? 18 : 7)
       if (t >= stop) continue
-      const where = this.at(L, ev.level)
+      const where = this.at(L, ev.level, ev.id)
       if (!where) continue
       const { p } = where
       const fade = hi && ev.id !== hi ? FADED * 1.6 : 1
@@ -830,10 +929,12 @@ export class Overlay {
       const left = stop - t
       const x = p.v.ox + e.x * p.v.k
       const y = p.v.oy + e.y * p.v.k
+      const busy = this.busy ? BUSY_AREA : 1
       if (e.kind === 'smoke') {
         const rad = (SMOKE_RADIUS / scale) * p.v.k * (0.7 + 0.3 * easeOut(age / 0.9))
-        ctx.globalAlpha = Math.min(1, age / 0.4) * Math.min(1, left / 1.5) * 0.82 * where.a * fade
+        ctx.globalAlpha = Math.min(1, age / 0.4) * Math.min(1, left / 1.5) * 0.82 * where.a * fade * busy
         ctx.drawImage(this.smoke, x - rad * 1.3, y - rad * 1.3, rad * 2.6, rad * 2.6)
+        if (this.busy) continue
         // Time left as a thin ring.
         const total = stop - e.t
         ctx.lineWidth = 1.5 * L.u
@@ -843,7 +944,7 @@ export class Overlay {
         ctx.stroke()
       } else {
         const rad = (FIRE_RADIUS / scale) * p.v.k * (0.6 + 0.4 * easeOut(age / 0.5))
-        const a = Math.min(1, age / 0.25) * Math.min(1, left / 0.8) * where.a * fade
+        const a = Math.min(1, age / 0.25) * Math.min(1, left / 0.8) * where.a * fade * busy
         ctx.globalAlpha = a * 0.95
         ctx.drawImage(this.fire, x - rad * 1.25, y - rad * 1.25, rad * 2.5, rad * 2.5)
         // Flames flicker along the edge, each on its own beat.
@@ -862,6 +963,8 @@ export class Overlay {
   }
 
   private drawPops(ctx: CanvasRenderingContext2D, L: Layout, tr: PTrack, t: number, hi: string | null) {
+    // Flash pops and throw lines from many rounds are only noise.
+    if (this.busy) return
     const { u } = L
     const scale = this.scout.info.scale || 5
     ctx.lineCap = 'round'
@@ -869,7 +972,7 @@ export class Overlay {
       const e = ev.e
       const age = t - e.t
       if (age < 0 || age > THROW_LINE) continue
-      const where = this.at(L, ev.level)
+      const where = this.at(L, ev.level, ev.id)
       if (!where) continue
       const { p } = where
       const fade = (hi && ev.id !== hi ? FADED : 1) * where.a
@@ -932,7 +1035,7 @@ export class Overlay {
       const e = ev.e
       const age = t - e.t
       if (!e.from || age < 0 || age > KILL_LINE) return
-      const where = this.at(L, ev.level)
+      const where = this.at(L, ev.level, ev.id)
       if (!where) return
       const { p } = where
       ctx.globalAlpha = (hi && ev.id !== hi ? FADED : 1) * where.a * 0.85 * (1 - age / KILL_LINE)
@@ -943,32 +1046,43 @@ export class Overlay {
       ctx.lineTo(p.v.ox + e.x * p.v.k, p.v.oy + e.y * p.v.k)
       ctx.stroke()
     }
-    for (const ev of tr.deaths) line(ev, BAD)
-    for (const ev of tr.kills) line(ev, ev.color)
+    // On a busy map only the plants stay, the dead leave and kills are
+    // too many to read.
+    if (!this.busy) {
+      for (const ev of tr.deaths) line(ev, BAD)
+      for (const ev of tr.kills) line(ev, ev.color)
+    }
     for (const ev of tr.plants) {
       const e = ev.e
       if (t < e.t) continue
-      const where = this.at(L, ev.level)
-      if (!where) continue
-      const { p } = where
-      const x = p.v.ox + e.x * p.v.k
-      const y = p.v.oy + e.y * p.v.k
-      const age = t - e.t
-      if (age < 1.2) {
-        ctx.globalAlpha = where.a * (1 - age / 1.2)
-        ctx.strokeStyle = ACCENT
-        ctx.lineWidth = 2 * u
-        circle(ctx, x, y, (12 + 26 * easeOut(age / 1.2)) * u)
-        ctx.stroke()
+      // The bomb matters to everyone, so it goes on every player's map.
+      const spots = L.byPlayer ? L.panels.map((p) => ({ p, a: p.level === ev.level ? 1 : OFF_FLOOR })) : [this.at(L, ev.level, ev.id)]
+      for (const where of spots) {
+        if (!where) continue
+        const { p } = where
+        const x = p.v.ox + e.x * p.v.k
+        const y = p.v.oy + e.y * p.v.k
+        const age = t - e.t
+        if (age < 1.2) {
+          ctx.globalAlpha = where.a * (1 - age / 1.2)
+          ctx.strokeStyle = ACCENT
+          ctx.lineWidth = 2 * u
+          circle(ctx, x, y, (12 + 26 * easeOut(age / 1.2)) * u)
+          ctx.stroke()
+        }
+        ctx.globalAlpha = where.a
+        c4Mark(ctx, x, y, (L.byPlayer ? 8 : 11) * u, u)
       }
-      ctx.globalAlpha = where.a
-      c4Mark(ctx, x, y, 11 * u, u)
     }
     // Enemies they killed, as a skull in the killer's colour.
+    if (this.busy) {
+      ctx.globalAlpha = 1
+      return
+    }
     for (const ev of tr.kills) {
       const e = ev.e
       if (t < e.t) continue
-      const where = this.at(L, ev.level)
+      const where = this.at(L, ev.level, ev.id)
       if (!where) continue
       const { p } = where
       const x = p.v.ox + e.x * p.v.k
@@ -1016,6 +1130,12 @@ export class Overlay {
     const pt = this.pt
     sampleAt(p, step, t, pt)
     const alive = pt[3] === 1
+    // On a busy map the dead fade out after a moment instead of piling up.
+    if (!alive && this.busy) {
+      const since = t - pp.died
+      if (since > DEAD_SHOW) return
+      alpha *= Math.min(1, (DEAD_SHOW - since) / 1)
+    }
     const headLevel = levelOf(this.scout.info, pt[2])
     // The trail: samples from t - trail up to now, then the current spot.
     if (trail > 0) {
@@ -1053,7 +1173,7 @@ export class Overlay {
         while (k < m - 1) {
           const band = Math.min(BANDS - 1, Math.floor((AG[k] / trail) * BANDS))
           const lv = LV[k]
-          const where = this.at(L, lv)
+          const where = this.at(L, lv, p.steamId)
           if (!where) break
           const v = where.p.v
           ctx.globalAlpha = alpha * where.a * 0.85 * Math.pow(1 - (band + 0.5) / BANDS, 1.4)
@@ -1076,7 +1196,7 @@ export class Overlay {
         }
       }
     }
-    const where = this.at(L, headLevel)
+    const where = this.at(L, headLevel, p.steamId)
     if (!where) return
     const v = where.p.v
     const x = v.ox + pt[0] * v.k
@@ -1146,7 +1266,7 @@ export class Overlay {
     ctx.lineJoin = 'round'
     for (const pp of tr.players) {
       sampleAt(pp.p, this.step, t, pt)
-      const where = this.at(L, levelOf(this.scout.info, pt[2]))
+      const where = this.at(L, levelOf(this.scout.info, pt[2]), pp.p.steamId)
       if (!where) continue
       const v = where.p.v
       const x = v.ox + pt[0] * v.k + 12 * u
@@ -1221,13 +1341,14 @@ function fixedDigits(ctx: CanvasRenderingContext2D, text: string, x: number, y: 
 }
 
 // prepTrack works out the floor of every sample and event once.
-function prepTrack(tr: SituationTrack, info: MapInfo): PTrack {
+function prepTrack(tr: SituationTrack, info: MapInfo, step: number): PTrack {
   const byName = new Map<string, TrackPlayer>()
   for (const p of tr.players) byName.set(p.name, p)
   const players = tr.players.map((p) => {
     const levels = new Uint8Array(p.zs.length)
     for (let i = 0; i < p.zs.length; i++) levels[i] = levelOf(info, p.zs[i])
-    return { p, levels }
+    const dead = p.alive.indexOf(0)
+    return { p, levels, died: dead < 0 ? Infinity : dead * step }
   })
   const out: PTrack = { track: tr, players, areas: [], pops: [], kills: [], deaths: [], plants: [] }
   for (const e of tr.events) {

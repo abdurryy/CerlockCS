@@ -1,10 +1,10 @@
 <script lang="ts">
   import { copyText } from '../lib/clipboard'
   import { mapLabel } from '../lib/format'
-  import { clockText, hitMarks, Overlay, type FloorMode, type OverlayOptions } from '../lib/scout/overlay'
+  import { clockText, hitMarks, Overlay, type FloorMode, type OverlayLayout, type OverlayOptions } from '../lib/scout/overlay'
   import type { MapScout, Situation, SituationTrack } from '../lib/scout/types'
   import { Cancelled } from '../lib/scout/video'
-  import { FPS, lengthSeconds, MAX_VIDEO_BYTES, renderVideo, sizeOf, VIDEO_LENGTHS, VIDEO_SIZES, videoLength } from '../lib/scout/videos'
+  import { FPS, layoutOf, lengthSeconds, MAX_VIDEO_BYTES, renderVideo, sizeOf, VIDEO_LENGTHS, VIDEO_SIZES, videoLength } from '../lib/scout/videos'
   import { downloadBlob } from '../lib/zip'
   import Icon from './Icon.svelte'
   import { fileName } from './ScoutGallery.svelte'
@@ -25,6 +25,8 @@
   let picked = $state<boolean[]>(situation.tracks.map(() => true))
   let highlight = $state<string | null>(null)
   let floors = $state<FloorMode>('auto')
+  // svelte-ignore state_referenced_locally
+  let layout = $state<OverlayLayout>(layoutOf('auto', situation.tracks.length))
   let size = $state('1080')
   let length = $state('round')
   let progress = $state(-1)
@@ -50,7 +52,7 @@
   const exporting = $derived(progress >= 0)
   const shown = $derived(rounds ? rounds.map((i) => s.tracks[i]) : s.tracks)
   const marks = $derived(hitMarks(shown, duration, 10, 600))
-  const opts = $derived<OverlayOptions>({ rounds, highlight, floors })
+  const opts = $derived<OverlayOptions>({ rounds, highlight, floors, layout })
   const players = $derived.by(() => {
     const seen = new Map<string, { steamId: string; name: string; color: string; role: string }>()
     for (const r of scout.roles) seen.set(r.steamId, { steamId: r.steamId, name: r.name, color: r.color, role: s.side === 'ct' ? r.ct.label : r.t.label })
@@ -335,6 +337,14 @@
       </div>
 
       <aside class="side">
+        <section>
+          <div class="sh"><h3>Layout</h3></div>
+          <div class="seg wrap" role="group" aria-label="Layout">
+            <button class:on={layout === 'together'} aria-pressed={layout === 'together'} title="Everyone on one map" onclick={() => (layout = 'together')}>One map</button>
+            <button class:on={layout === 'players'} aria-pressed={layout === 'players'} title="Each player on a map of their own, easier to read with many rounds" onclick={() => (layout = 'players')}>Map per player</button>
+          </div>
+        </section>
+
         <section>
           <div class="sh">
             <h3>Rounds</h3>

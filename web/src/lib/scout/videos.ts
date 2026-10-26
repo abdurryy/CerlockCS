@@ -1,5 +1,5 @@
 import { mapLabel } from '../format'
-import type { Overlay, OverlayOptions } from './overlay'
+import type { Overlay, OverlayLayout, OverlayOptions } from './overlay'
 import { slug } from './slug'
 import type { BuyKind, Situation } from './types'
 import { encodeVideo, type Video } from './video'
@@ -28,6 +28,24 @@ export const VIDEO_LENGTHS = [
 ]
 
 export const FPS = 30
+
+// From this many rounds everyone on one map is too much to read, and each
+// player gets their own map.
+export const SPLIT_ROUNDS = 4
+
+export type LayoutChoice = 'auto' | OverlayLayout
+
+export const VIDEO_LAYOUTS: { id: LayoutChoice; label: string; title: string }[] = [
+  { id: 'auto', label: 'Auto', title: `One map up to ${SPLIT_ROUNDS - 1} rounds, a map per player from ${SPLIT_ROUNDS}` },
+  { id: 'together', label: 'One map', title: 'Everyone on one map' },
+  { id: 'players', label: 'Map per player', title: 'Each player on a map of their own' },
+]
+
+// layoutOf picks the layout for a video of this many rounds.
+export function layoutOf(choice: LayoutChoice, rounds: number): OverlayLayout {
+  if (choice !== 'auto') return choice
+  return rounds >= SPLIT_ROUNDS ? 'players' : 'together'
+}
 
 // Every video stays under 20 MB, long ones get a lower bitrate.
 export const MAX_VIDEO_BYTES = 20_000_000

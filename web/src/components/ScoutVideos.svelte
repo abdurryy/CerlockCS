@@ -5,7 +5,7 @@
   import { clockText, lengthOf, Overlay } from '../lib/scout/overlay'
   import type { MapScout, Situation } from '../lib/scout/types'
   import { Cancelled, targetBitrate } from '../lib/scout/video'
-  import { FPS, lengthSeconds, MAX_VIDEO_BYTES, renderVideo, sizeOf, teamFolder, VIDEO_LENGTHS, VIDEO_SIZES, videoPath } from '../lib/scout/videos'
+  import { FPS, layoutOf, lengthSeconds, MAX_VIDEO_BYTES, renderVideo, sizeOf, teamFolder, VIDEO_LAYOUTS, VIDEO_LENGTHS, VIDEO_SIZES, videoPath, type LayoutChoice } from '../lib/scout/videos'
   import Icon from './Icon.svelte'
   import ScoutIcon from './ScoutIcon.svelte'
 
@@ -29,6 +29,7 @@
 
   let size = $state('1080')
   let length = $state('round')
+  let layout = $state<LayoutChoice>('auto')
   let skip = $state<Record<string, boolean>>({})
   let done = $state<Record<string, Done>>({})
   let running = $state(false)
@@ -99,6 +100,7 @@
     const list = chosen.slice()
     const sz = sizeOf(size)
     const cut = lengthSeconds(length)
+    const pick = layout
     running = true
     finished = false
     error = ''
@@ -118,7 +120,7 @@
         const o = await Overlay.create(it.scout, it.s, { teamName })
         const v = await renderVideo(
           o,
-          {},
+          { layout: layoutOf(pick, it.s.tracks.length) },
           sz,
           cut,
           (p) => {
@@ -224,6 +226,14 @@
           <div class="seg" role="group" aria-label="Video length">
             {#each VIDEO_LENGTHS as l (l.id)}
               <button class:on={length === l.id} aria-pressed={length === l.id} disabled={running} onclick={() => (length = l.id)}>{l.label}</button>
+            {/each}
+          </div>
+        </div>
+        <div class="field">
+          <span class="label">Layout</span>
+          <div class="seg" role="group" aria-label="Layout">
+            {#each VIDEO_LAYOUTS as l (l.id)}
+              <button class:on={layout === l.id} aria-pressed={layout === l.id} disabled={running} title={l.title} onclick={() => (layout = l.id)}>{l.label}</button>
             {/each}
           </div>
         </div>
