@@ -132,7 +132,8 @@ Teams in ESEA often have few league games to look at, but their players queue FA
 
 The report also splits their rounds by side and buy: pistol, eco, force, anti-eco and full buys. For each one you see where they stand in the first 10 and 20 seconds, how often they rush, stack a site or push early, and short notes like "On CT full buys at 15 s they were usually at Outside (6 of 6)".
 
-- **Watch** plays every round of a situation on the map at the same time, the first 30 seconds after freeze time, with the utility, the kills and where each player looks. Pick rounds, highlight one player and save it as an MP4 for your team's Discord, or save a single frame.
+- **Watch** plays every round of a situation on the map at the same time, from freeze time to the end of the round, with the utility, the kills and where each player looks. Rounds that are over fade out, so you see who is still playing. Pick rounds, highlight one player and save it as an MP4 (the whole round, or the first 60 or 30 seconds), or save a single frame.
+- **Save all videos** makes the video of every round type on every map in one go and puts them in folders: `Downloads\Cerlock\<team>\mirage\ct\eco-rounds.mp4`, `...\t\force-buys.mp4` and so on. It keeps going in the corner while you look at the rest of the report.
 - **Roles**: a guess per player, like A anchor, rotator or AWP on CT and entry, lurker or support on T, with how many rounds it is based on.
 - **Spots in game**: where each player usually stands 15 s into CT rounds and 20 s into T rounds, and the way they look. Copy one as `setpos` and `setang` for the console, or download a `.cfg` with an alias per spot and walk through them on a practice server with `spot_next`. Good for checking the angles they hold before you play them.
 - **CS2** next to every round in Watch copies a `demo_gototick` command for that moment (plus `spec_player` for the highlighted player), so you can jump there with the demo open in the game.
@@ -170,6 +171,7 @@ Other options:
 --demos       folder with demos, can be given more than once
 --watch       parse new demos in the demo folders in the background (default true)
 --downloads   pick up FACEIT demos saved in the Downloads folder (default true)
+--exports     where Save all videos puts the videos (default Downloads/Cerlock)
 --offline     never download radar images or icons
 --workers     demos parsed at the same time
 --faceit-key  FACEIT Data API key for scouting (FACEIT_API_KEY works too)

@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.3.1
+
+Longer situation videos and all of them in one click.
+
+New:
+
+- Situation videos now run from freeze time to the end of the round instead of the first 30 seconds. Rounds that are over fade out, and the time bar shows the real round clock
+- Save all videos: one button makes the video of every round type on every map and saves them in folders, like `Downloads\Cerlock\<team>\mirage\ct\eco-rounds.mp4`. It shows how long is left, can be cancelled, keeps going in the corner and opens the folder when it is done
+- Pick the video length: whole round, first 60 s or first 30 s
+- 4x speed in Watch
+
+How to run it:
+
+- Windows: download `cerlock-windows-amd64.exe` and double click it. Windows may warn about an unknown publisher since the exe is not signed, click "More info" and then "Run anyway".
+- Linux and macOS: download the `.tar.gz` for your system, extract it and run `./cerlock`.
+
 ## v0.3.0
 
 Scouting by round type, videos of their rounds and their spots in game.
