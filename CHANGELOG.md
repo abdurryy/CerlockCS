@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.3.2
+
+Videos stay under 20 MB.
+
+- Every saved video is now under 20 MB, whole rounds too. Longer videos get a lower bitrate, and a file that still comes out too big is made again a bit smaller. A 2:13 video at 1080p comes out at about 16 MB and the map and names stay sharp
+- Fewer keyframes, so more of the size goes to the picture
+
+How to run it:
+
+- Windows: download `cerlock-windows-amd64.exe` and double click it. Windows may warn about an unknown publisher since the exe is not signed, click "More info" and then "Run anyway".
+- Linux and macOS: download the `.tar.gz` for your system, extract it and run `./cerlock`.
+
 ## v0.3.1
 
 Longer situation videos and all of them in one click.
