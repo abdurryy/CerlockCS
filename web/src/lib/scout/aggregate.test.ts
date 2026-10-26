@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { FLAG, Replay } from '../replay'
 import type { MapInfo, Player, Round } from '../types'
-import { Binner, findRoster, liveStart, newGrid, ScoutBuilder, scoutLabels, shares, sideIn, topSetups } from './aggregate'
+import { Binner, findRoster, liveStart, newGrid, ScoutBuilder, scoutLabels, scoutOptions, shares, sideIn, topSetups } from './aggregate'
+import { rosterColor } from './situations'
 import type { RosterPlayer } from './types'
 
 type Col = { name: string; type: 'u8' | 'i16' | 'u16' | 'i32'; data: ArrayLike<number> }
@@ -435,6 +436,75 @@ describe('ScoutBuilder', () => {
     expect(s.noHit).toBe(1)
     expect(s.executes).toEqual([])
     expect(s.players[1].tPlaces).toEqual([])
+  })
+
+  it('reads situations, tracks and roles', () => {
+    const b = new ScoutBuilder(ROSTER)
+    b.add(r, 'r1', 'one.dem', INFO)
+    const [s] = b.result()
+    expect(scoutOptions(s)).toMatchObject({ rushSeconds: 25, setupSeconds: 15, trackSeconds: 30, trackStep: 0.125 })
+    // Round 0 is the CT pistol, round 1 a T eco.
+    expect(s.situations.map((x) => [x.key, x.title, x.rounds, x.won])).toEqual([
+      ['ct-pistol', 'CT pistol rounds', 1, 1],
+      ['t-eco', 'T eco rounds', 1, 0],
+    ])
+    const [pistol, eco] = s.situations
+    // On B 10 s after freeze time: a rush.
+    expect(eco.rushes).toBe(1)
+    expect(eco.hits).toEqual([{ site: 'B', rounds: 1, avgTime: 10 }])
+    expect(eco.noHit).toBe(0)
+    // One eco round is not a pattern yet.
+    expect(eco.notes).toEqual([])
+    expect(pistol.stacks).toEqual([])
+
+    const [t] = pistol.tracks
+    expect(t.label).toBe('Round 1')
+    expect(t.won).toBe(true)
+    expect(t.players.map((p) => [p.name, p.color])).toEqual([['Bee', rosterColor(0)], ['Ace', rosterColor(1)]])
+    // Ace stands on A at radar (100, 124) the whole time.
+    const ace = t.players[1]
+    expect(ace.xs.length).toBe(241)
+    expect([ace.xs[80], ace.ys[80]]).toEqual([100, 124])
+    // Bee dies at frame 60, 12.5 s after freeze time.
+    const bee = t.players[0]
+    expect(bee.alive[99]).toBe(1)
+    expect(bee.alive[100]).toBe(0)
+    // The HE at tick 500 and Ace's kill at tick 500.
+    expect(t.events.map((e) => [e.kind, e.player])).toEqual([['he', 'Ace'], ['kill', 'Ace']])
+    expect(eco.tracks[0].hit).toBe('B')
+    expect(eco.tracks[0].hitTime).toBe(10)
+    expect(eco.tracks[0].events.map((e) => e.kind)).toEqual(['death', 'smoke', 'kill', 'plant', 'flash'])
+
+    expect(s.roles.map((c) => [c.name, c.color, c.ct.rounds, c.t.rounds, c.confidence])).toEqual([
+      ['Bee', rosterColor(0), 1, 1, 'low'],
+      ['Ace', rosterColor(1), 1, 1, 'low'],
+    ])
+    expect(s.roles[1].ct).toMatchObject({ zone: 'A', zoneShare: 1, place: 'Bombsite A', placeShare: 1, awp: 0 })
+    // Bee had the AWP on CT side.
+    expect(s.roles[0].ct.awp).toBe(1)
+    expect(s.roles[0].ct.label).toBe('AWP')
+    // Ace was first onto B in the T round.
+    expect(s.roles[1].t.entry).toBe(1)
+    // Nothing to say from one round of each.
+    expect(s.roles[0].notes).toEqual([])
+    expect(s.tendencies).toEqual([])
+  })
+
+  it('adds situations up over several matches', () => {
+    const b = new ScoutBuilder(ROSTER, { trackSeconds: 10, trackStep: 0.5 })
+    b.add(r, 'r1', 'one.dem', INFO, 1790000000)
+    b.add(r, 'r2', 'two.dem', INFO, 1790100000)
+    const [s] = b.result()
+    const eco = s.situations.find((x) => x.key === 't-eco')!
+    expect(eco.rounds).toBe(2)
+    expect(eco.rushes).toBe(2)
+    expect(eco.hits).toEqual([{ site: 'B', rounds: 2, avgTime: 10 }])
+    // Numbered like the match list, newest first.
+    expect(eco.tracks.map((t) => [t.replayId, t.label])).toEqual([['r1', 'Match 2, round 2'], ['r2', 'Match 1, round 2']])
+    expect(eco.tracks[0].players[0].xs.length).toBe(21)
+    expect(eco.notes).toContain('On T eco rounds they rushed B in 2 of 2, on site after 10 s on average.')
+    expect(s.roles[1].ct.rounds).toBe(2)
+    expect(s.tendencies).toContain('On T eco rounds they rushed B in 2 of 2, on site after 10 s on average.')
   })
 
   it('finds the hit time on the planted site when the first hit was elsewhere', () => {

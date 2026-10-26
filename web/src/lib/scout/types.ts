@@ -19,9 +19,26 @@ export interface ScoutOptions {
   utilitySeconds: number
   // Seconds after freeze time that count as the early T map control.
   earlyTSeconds?: number
+  // A T site hit this many seconds after freeze time or sooner is a rush.
+  rushSeconds: number
+  // Seconds after freeze time where the CT setup is read, for stacks and
+  // roles.
+  setupSeconds: number
+  // Length of the round tracks in seconds, and the time between samples.
+  trackSeconds: number
+  trackStep: number
 }
 
-export const DEFAULT_SCOUT_OPTIONS: ScoutOptions = { earlyCtSeconds: 20, preHitSeconds: 12, utilitySeconds: 20, earlyTSeconds: 25 }
+export const DEFAULT_SCOUT_OPTIONS: ScoutOptions = {
+  earlyCtSeconds: 20,
+  preHitSeconds: 12,
+  utilitySeconds: 20,
+  earlyTSeconds: 25,
+  rushSeconds: 25,
+  setupSeconds: 15,
+  trackSeconds: 30,
+  trackStep: 0.125,
+}
 
 // HeatGrid is radar space (1024x1024) binned into size x size cells, one
 // grid per map floor.
@@ -151,6 +168,112 @@ export interface ScoutReplay {
   date: number
 }
 
+// BuyKind is the roster's buy in a round. antieco is a full buy while the
+// other team is on an eco or a force buy.
+export type BuyKind = 'pistol' | 'eco' | 'force' | 'full' | 'antieco'
+
+// Zone is the part of the map a position belongs to.
+export type Zone = 'A' | 'B' | 'mid' | 'other'
+
+// TrackPlayer is one roster player in a round, in radar space (0 to 1024),
+// one sample per track step. After death alive is 0 and the position stays
+// where they died. color is the same for the player in every round.
+export interface TrackPlayer {
+  steamId: string
+  name: string
+  color: string
+  xs: Float32Array
+  ys: Float32Array
+  zs: Float32Array
+  alive: Uint8Array
+}
+
+// TrackEvent is something that happened in a track, t seconds after
+// freeze time, in radar space (z stays in world units). until is when a
+// smoke or fire ends, from is where a grenade was thrown or where the
+// killer stood.
+export interface TrackEvent {
+  t: number
+  kind: 'smoke' | 'flash' | 'he' | 'fire' | 'decoy' | 'kill' | 'death' | 'plant'
+  x: number
+  y: number
+  z: number
+  player: string
+  until?: number
+  from?: [number, number]
+}
+
+// SituationTrack is the start of one round, like "Match 2, round 13".
+// hit is the site the T side went for, '' when none, with hitTime in
+// seconds after freeze time (-1 when none).
+export interface SituationTrack {
+  replayId: string
+  round: number
+  label: string
+  won: boolean
+  hit: string
+  hitTime: number
+  players: TrackPlayer[]
+  events: TrackEvent[]
+}
+
+// Situation is every round of one side and buy, like T pistol rounds.
+// MapScout.situations has one per side and buy with at least one round,
+// ordered pistol, eco, force, antieco, full, CT before T.
+export interface Situation {
+  // Like "t-pistol" or "ct-antieco".
+  key: string
+  side: 'ct' | 't'
+  buy: BuyKind
+  title: string
+  rounds: number
+  won: number
+  // T: rounds with a site hit within rushSeconds.
+  rushes: number
+  // T: the site they went for, with the average time to get there.
+  hits: { site: string; rounds: number; avgTime: number }[]
+  // T: rounds without a site hit or a plant.
+  noHit: number
+  // CT: rounds with 3 or more players in one site zone at setupSeconds.
+  stacks: { site: string; rounds: number }[]
+  // CT: rounds where a player took a fight or stood in T territory early.
+  pushes: number
+  // Lost rounds where 2 or more players stayed alive away from the bomb
+  // and the enemies.
+  saves: number
+  // Roster positions in the first 10 and 20 seconds.
+  heat10: HeatGrid
+  heat20: HeatGrid
+  // One per round, from freeze time to trackSeconds after.
+  tracks: SituationTrack[]
+  // Patterns in plain words, strongest first.
+  notes: string[]
+}
+
+// RoleCard is what one player does per side, shares are 0 to 1.
+// CT: zone and place are where they stood most at setupSeconds, with the
+// share of their CT rounds; rotates is the number of rounds they went to
+// the other site before their first fight or the plant; awp is the share
+// of CT rounds with the AWP. Labels: "A anchor", "B anchor", "AWP",
+// "Rotator", "Mid", a place like "Outside" for a fixed spot elsewhere, or
+// "Flex".
+// T: entry and lurk are shares of their T rounds with a site hit, support
+// is their share of the team's utility before hits, awp the share of T
+// rounds with the AWP. Labels: "Entry", "Lurker", "Support", "AWP" or
+// "Flex".
+// A side they never played has rounds 0 and label ''. confidence goes by
+// the rounds behind the card: under 6 low, under 12 medium, else high,
+// counting the weaker side when they played both.
+export interface RoleCard {
+  steamId: string
+  name: string
+  color: string
+  ct: { rounds: number; zone: Zone; zoneShare: number; place: string; placeShare: number; rotates: number; awp: number; label: string }
+  t: { rounds: number; entry: number; lurk: number; support: number; awp: number; label: string }
+  confidence: 'low' | 'medium' | 'high'
+  notes: string[]
+}
+
 export interface MapScout {
   map: string
   info: MapInfo
@@ -173,4 +296,8 @@ export interface MapScout {
   openings: OpeningDuel[]
   postPlant: PlantScout[]
   retake: PlantScout[]
+  situations: Situation[]
+  roles: RoleCard[]
+  // The most useful notes from the situations and roles, best first.
+  tendencies: string[]
 }

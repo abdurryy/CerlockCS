@@ -5,8 +5,25 @@
 import { listReplays, mapInfo } from '../api'
 import type { Callout, Site } from '../mapview'
 import { FLAG, loadReplay, prettyPlace, type Replay } from '../replay'
-import type { Grenade, Kill, MapInfo, Player, Round } from '../types'
+import type { Kill, MapInfo, Player, Round } from '../types'
 import { EQ } from '../weapons'
+import { addRoles, finishRoles, RoleAcc } from './roles'
+import {
+  AFTER_HIT,
+  BUY_ORDER,
+  buildTrack,
+  buildZones,
+  pickTendencies,
+  readRound,
+  rosterColor,
+  SituationAcc,
+  siteHit,
+  throwSpot,
+  trackLabel,
+  type Note,
+  type RoundCtx,
+  type ZoneMap,
+} from './situations'
 import {
   DEFAULT_SCOUT_OPTIONS,
   type CtSetup,
@@ -21,6 +38,7 @@ import {
   type ScoutOptions,
   type ScoutReplay,
   type SideHeat,
+  type Situation,
   type SiteExecute,
   type UtilityMark,
   type Vec3,
@@ -34,8 +52,6 @@ const STEP = 4
 const FINE_STEP = 2
 // Frames between samples for callout positions.
 const LABEL_STEP = 16
-// Utility that went off this long after the hit still belongs to it.
-const AFTER_HIT = 3
 const SIDE_T = 2
 const SIDE_CT = 3
 const SETUPS = 6
@@ -109,6 +125,15 @@ export class Binner {
 
   radar(x: number, y: number): [number, number] {
     return [(x - this.posX) / this.scale, (this.posY - y) / this.scale]
+  }
+
+  // rx and ry are radar() one axis at a time, for loops.
+  rx(x: number): number {
+    return (x - this.posX) / this.scale
+  }
+
+  ry(y: number): number {
+    return (this.posY - y) / this.scale
   }
 }
 
@@ -184,30 +209,16 @@ function placeAt(r: Replay, p: number, f: number, from: number, back: boolean): 
   return ''
 }
 
-// firstOnSite returns the tick a T of the team first stood on the site,
-// or -1.
-function firstOnSite(r: Replay, a: number, b: number, members: number[], site: string): number {
-  const idx = r.places.indexOf(`Bombsite${site}`)
-  if (idx <= 0 || !r.pplace.length) return -1
-  const F = r.frames
-  for (let f = a; f <= b; f++) {
-    for (const p of members) {
-      const i = p * F + f
-      if (r.pplace[i] === idx && r.pside[i] === SIDE_T && r.pflags[i] & FLAG.alive) return r.tick[f]
-    }
-  }
-  return -1
-}
-
 // liveStart is the tick a round went live. Some demos have no freeze end
 // event and the parser uses the round start instead, so then it is the
-// first frame players move, since nobody can move in freeze time.
+// first frame players move, since nobody can move in freeze time. It
+// looks up to the round end, timeouts and pauses can be minutes long.
 export function liveStart(r: Replay, rd: Round): number {
   if (rd.freezeEndTick > rd.startTick || !r.frames) return rd.freezeEndTick
   const F = r.frames
   // Skip the first second, players are still being moved to their spawns.
   const a = r.frameIndex(rd.startTick + r.rate)
-  const b = Math.min(r.frameIndex(rd.startTick + 40 * r.rate), r.frameIndex(rd.endTick))
+  const b = r.frameIndex(rd.endTick)
   for (let f = Math.max(1, a + 1); f <= b; f++) {
     let moved = 0
     for (let p = 0; p < r.players; p++) {
@@ -405,11 +416,14 @@ interface MapAcc {
   openings: OpeningDuel[]
   postPlant: Map<string, PlantAcc>
   retake: Map<string, PlantAcc>
+  situations: Map<string, SituationAcc>
+  roles: Map<string, RoleAcc>
 }
 
 // Ctx is what every round of one replay needs.
 interface Ctx {
   r: Replay
+  id: string
   acc: MapAcc
   team: number
   players: number[]
@@ -420,6 +434,10 @@ interface Ctx {
   places: string[]
   // Seconds between frames.
   dt: number
+  // Tick each round went live.
+  lives: number[]
+  zones: ZoneMap
+  roles: RoleAcc[]
 }
 
 function heatAcc(levels: number): HeatAcc {
@@ -519,6 +537,8 @@ export class ScoutBuilder {
         openings: [],
         postPlant: new Map(),
         retake: new Map(),
+        situations: new Map(),
+        roles: new Map(),
       }
       this.maps.set(name, acc)
     }
@@ -553,6 +573,26 @@ export class ScoutBuilder {
     return pa
   }
 
+  private roleFor(acc: MapAcc, pa: PlayerAcc): RoleAcc {
+    let ra = acc.roles.get(pa.steamId)
+    if (!ra) {
+      ra = new RoleAcc(pa.steamId, pa.name, rosterColor(pa.order), pa.order)
+      acc.roles.set(pa.steamId, ra)
+    }
+    return ra
+  }
+
+  private situationFor(acc: MapAcc, side: 'ct' | 't', buy: Situation['buy']): SituationAcc {
+    const key = `${side}-${buy}`
+    let sit = acc.situations.get(key)
+    if (!sit) {
+      const L = acc.info.levels.length
+      sit = new SituationAcc(side, buy, () => newGrid(L), this.opts.setupSeconds)
+      acc.situations.set(key, sit)
+    }
+    return sit
+  }
+
   private execFor(acc: MapAcc, site: string): ExecAcc {
     let ex = acc.executes.get(site)
     if (!ex) {
@@ -582,7 +622,15 @@ export class ScoutBuilder {
     const byIndex = new Map<number, PlayerAcc>()
     players.forEach((p, k) => byIndex.set(p, pas[k]))
     const span = r.frames > 1 ? (r.tick[r.frames - 1] - r.tick[0]) / (r.frames - 1) : 2
-    const ctx: Ctx = { r, acc, team, players, pas, byIndex, places: r.places.map((_, i) => r.placeName(i)), dt: span / r.rate }
+    const lives = r.match.rounds.map((rd) => liveStart(r, rd))
+    const ctx: Ctx = {
+      r, id, acc, team, players, pas, byIndex,
+      places: r.places.map((_, i) => r.placeName(i)),
+      dt: span / r.rate,
+      lives,
+      zones: buildZones(r, lives),
+      roles: pas.map((pa) => this.roleFor(acc, pa)),
+    }
     let rounds = 0
     r.match.rounds.forEach((rd, i) => {
       const side = rd.sideOf?.[team]
@@ -617,7 +665,7 @@ export class ScoutBuilder {
       if (ct) acc.won.ct++
       else acc.won.t++
     }
-    const live = liveStart(r, rd)
+    const live = ctx.lives[i]
     const a = r.frameIndex(live)
     const b = r.frameIndex(rd.endTick)
     const early = Math.min(b, r.frameIndex(live + this.opts.earlyCtSeconds * r.rate))
@@ -680,6 +728,32 @@ export class ScoutBuilder {
     this.afterPlant(ctx, i, b, ct, won)
     this.kills(ctx, i, live)
     this.utility(ctx, i)
+    this.situation(ctx, i, side, won, live, a, b)
+  }
+
+  // situation reads the round for its side and buy: rush, stack, push,
+  // save, the track of the first seconds and the roles.
+  private situation(ctx: Ctx, i: number, side: number, won: boolean, live: number, a: number, b: number) {
+    const { r, acc, team, players, pas } = ctx
+    const rd = r.match.rounds[i]
+    const ks: number[] = []
+    players.forEach((p, k) => {
+      if (sideIn(rd, p, team) === side) ks.push(k)
+    })
+    if (!ks.length) return
+    const rc: RoundCtx = {
+      r, i, team, side, won, live, a, b,
+      players: ks.map((k) => players[k]),
+      names: ks.map((k) => pas[k].name),
+      ids: ks.map((k) => pas[k].steamId),
+      colors: ks.map((k) => rosterColor(pas[k].order)),
+      zones: ctx.zones,
+      bin: acc.bin,
+    }
+    const read = readRound(rc, this.opts)
+    const track = buildTrack(rc, read, ctx.id, this.opts)
+    this.situationFor(acc, read.side, read.buy).add(rc, read, track)
+    addRoles(ks.map((k) => ctx.roles[k]), rc, read, this.opts)
   }
 
   // ctSetup records where everyone stood at the early CT moment. Players
@@ -716,22 +790,13 @@ export class ScoutBuilder {
   private execute(ctx: Ctx, i: number, live: number, a: number, b: number) {
     const { r, acc, team, players, pas } = ctx
     const rd = r.match.rounds[i]
-    const info = r.report?.rounds?.[i]
     const bomb = r.roundBomb[i] ?? []
-    const plant = bomb.find((e) => e.kind === 'planted')
-    const site = plant?.site || info?.hit || ''
-    let hitTick = -1
-    if (site) {
-      // The analysis counts the hit time from its own freeze end.
-      hitTick = info && info.hit === site && info.hitTime >= 0 ? rd.freezeEndTick + info.hitTime * r.rate : firstOnSite(r, a, b, r.teamPlayers[team], site)
-      if (hitTick < 0 && plant) hitTick = plant.tick
-    }
-    if (!site || hitTick < 0) {
+    const { site, tick: hitTick } = siteHit(r, i, team, live)
+    if (!site) {
       acc.noHit++
       return
     }
     const rate = r.rate
-    hitTick = Math.max(live, hitTick)
     const ex = this.execFor(acc, site)
     ex.rounds++
     ex.hitSum += (hitTick - live) / rate
@@ -892,11 +957,37 @@ export class ScoutBuilder {
         openings: acc.openings,
         postPlant: plants(acc.postPlant),
         retake: plants(acc.retake),
+        situations: [],
+        roles: [],
+        tendencies: [],
       }
+      this.finishSituations(acc, scout)
       extras.set(scout, { labels: acc.labels.finish(), opts: this.opts })
       out.push(scout)
     }
     return out
+  }
+
+  // finishSituations fills in the situations, the roles and the best
+  // notes of a finished map.
+  private finishSituations(acc: MapAcc, scout: MapScout) {
+    const notes: Note[] = []
+    // Tracks are named after the match in the sorted list.
+    const match = new Map<string, number>()
+    if (scout.replays.length > 1) scout.replays.forEach((rp, k) => match.set(rp.id, k + 1))
+    const sits = [...acc.situations.values()].sort(
+      (a, b) => BUY_ORDER.indexOf(a.buy) - BUY_ORDER.indexOf(b.buy) || (a.side === b.side ? 0 : a.side === 'ct' ? -1 : 1),
+    )
+    for (const sa of sits) {
+      const { situation, notes: sn } = sa.finish()
+      for (const t of situation.tracks) t.label = trackLabel(match.get(t.replayId) ?? 0, t.round)
+      scout.situations.push(situation)
+      notes.push(...sn)
+    }
+    const roles = finishRoles([...acc.roles.values()])
+    scout.roles = roles.cards
+    notes.push(...roles.notes)
+    scout.tendencies = pickTendencies(notes)
   }
 }
 
@@ -907,18 +998,6 @@ function addHeat(bin: Binner, h: HeatAcc, c: number, place: string) {
 
 function mark(k: Kill, side: number, place: string, player: string, opening: boolean): KillMark {
   return { killer: vec(k.killerPos), victim: vec(k.victimPos), side, weapon: k.weapon, headshot: !!k.headshot, opening, place, player }
-}
-
-// throwSpot is where a grenade left the thrower's hand: the start of its
-// recorded path, or where the thrower stood.
-function throwSpot(r: Replay, g: Grenade): Vec3 | undefined {
-  if (g.pathLen > 0 && g.pathStart >= 0 && g.pathStart < r.nade.x.length) {
-    const k = g.pathStart
-    return [r.nade.x[k], r.nade.y[k], r.nade.z[k]]
-  }
-  if (g.thrower < 0 || g.thrower >= r.players || !r.frames) return undefined
-  const j = g.thrower * r.frames + r.frameIndex(g.throwTick)
-  return [r.px[j], r.py[j], r.pz[j]]
 }
 
 // entryDate reads a play date from a library entry, if the server sends
