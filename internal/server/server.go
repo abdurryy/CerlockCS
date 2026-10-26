@@ -44,6 +44,9 @@ type Config struct {
 	// DownloadsDir is watched for FACEIT demos downloaded in the browser,
 	// empty turns it off.
 	DownloadsDir string
+	// ExportDir is where scouting videos are saved, empty means the
+	// exports folder in DataDir.
+	ExportDir string
 }
 
 type Server struct {
@@ -101,6 +104,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/scout/match", s.scoutMatch)
 	mux.HandleFunc("POST /api/scout/find", s.scoutFind)
 	mux.HandleFunc("POST /api/scout/download", s.scoutDownload)
+	mux.HandleFunc("GET /api/exports", s.exportInfo)
+	mux.HandleFunc("PUT /api/exports/file", s.saveExport)
+	mux.HandleFunc("POST /api/exports/open", s.openExport)
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	})

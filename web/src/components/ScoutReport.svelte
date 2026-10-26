@@ -7,6 +7,7 @@
   import { fileName, freePictures, saveZip, toPicture, toPictures, type Picture } from './ScoutGallery.svelte'
   import ScoutIcon from './ScoutIcon.svelte'
   import ScoutMapReport, { type ImageSet } from './ScoutMapReport.svelte'
+  import ScoutVideos from './ScoutVideos.svelte'
   import type { ScoutState } from './ScoutPage.svelte'
 
   // Step 3: reads the selected demos into one scouting report per map and
@@ -23,6 +24,7 @@
   let teamName = $state('')
   let sets = $state.raw<Record<string, ImageSet>>({})
   let zipping = $state('')
+  let videos = $state(false)
 
   // The seconds as used, an emptied field counts as the default.
   const earlySecs = $derived(Math.max(5, Math.min(60, Math.round(Number(early) || 20))))
@@ -263,6 +265,10 @@
           </button>
         {/each}
       </div>
+      <button class="btn" disabled={stale || videos} onclick={() => (videos = true)} title="A video of every round type on every map, saved in folders per map and side">
+        <ScoutIcon name="play" size={14} />
+        <span>Save all videos</span>
+      </button>
       <button class="btn" disabled={!!zipping || stale} onclick={zipAll} title="Every image of every map, one folder per map">
         {#if zipping === '*'}<i class="spin"></i>{:else}<ScoutIcon name="download" size={15} />{/if}
         <span>{zipping === '*' ? `Drawing ${drawnMaps} of ${scouts.length} maps` : 'Download everything (zip)'}</span>
@@ -275,6 +281,10 @@
       {/key}
     {/if}
   </div>
+{/if}
+
+{#if videos && scouts}
+  <ScoutVideos {scouts} {teamName} onclose={() => (videos = false)} />
 {/if}
 
 <style>

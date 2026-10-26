@@ -139,6 +139,7 @@ func serve(ctx context.Context, args []string) error {
 	open := fs.Bool("open", false, "open the viewer in the browser")
 	faceitKey := fs.String("faceit-key", "", "FACEIT Data API key for scouting (or set FACEIT_API_KEY), a key saved in the app wins")
 	downloads := fs.Bool("downloads", true, "pick up FACEIT demos saved in the Downloads folder")
+	exports := fs.String("exports", "", "where scouting videos are saved (default: Downloads/Cerlock)")
 	fs.Parse(args)
 	if *faceitKey == "" {
 		*faceitKey = os.Getenv("FACEIT_API_KEY")
@@ -160,6 +161,12 @@ func serve(ctx context.Context, args []string) error {
 	}
 	if *downloads {
 		cfg.DownloadsDir = downloadsDir()
+	}
+	cfg.ExportDir = *exports
+	if cfg.ExportDir == "" {
+		if dir := downloadsDir(); dir != "" {
+			cfg.ExportDir = filepath.Join(dir, "Cerlock")
+		}
 	}
 	if *webDir != "" {
 		cfg.Static = os.DirFS(*webDir)

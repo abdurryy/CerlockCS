@@ -187,3 +187,28 @@ export async function scoutDownload(matchIds: string[]): Promise<DownloadResult>
     downloadsAllowed: r.downloadsAllowed !== false,
   }
 }
+
+// exportFolder is where saved videos go on disk.
+export async function exportFolder(): Promise<string> {
+  const res = await json<{ dir: string }>(await fetch('/api/exports'))
+  return res.dir
+}
+
+// saveExport writes a video or PNG to a path like
+// "team/mirage/ct/eco-rounds.mp4" in the export folder and returns where
+// it went.
+export async function saveExport(path: string, blob: Blob): Promise<string> {
+  let res: Response
+  try {
+    res = await fetch(`/api/exports/file?path=${encodeURIComponent(path)}`, { method: 'PUT', headers: { 'Content-Type': blob.type }, body: blob })
+  } catch {
+    throw new ApiError('Cerlock is not answering, is it still running?', 0)
+  }
+  return (await json<{ path: string }>(res)).path
+}
+
+// openExport shows a folder of the export folder in the file manager.
+export async function openExport(path = ''): Promise<void> {
+  const res = await fetch('/api/exports/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) })
+  if (!res.ok) await json(res)
+}
