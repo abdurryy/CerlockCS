@@ -110,6 +110,14 @@
     deaths: 'deaths',
   }
 
+  const BUYS: Record<string, string> = {
+    pistol: 'pistol rounds',
+    eco: 'eco rounds',
+    force: 'force buys',
+    antieco: 'anti-eco rounds',
+    full: 'full buys',
+  }
+
   const PLAYER_TAILS: [string, string][] = [
     ['ct-early', 'CT, early round'],
     ['t-early', 'T, early round'],
@@ -130,6 +138,7 @@
       for (const [tail, label] of PLAYER_TAILS) if (rest.endsWith(`-${tail}`)) return label
       return ''
     }
+    if (parts[1] === 'situation' && parts[2] in BUYS) return `${WORDS[parts[0]]}, ${BUYS[parts[2]]}`
     if (parts.some((w) => !(w in WORDS) && !/^[a-c]$/.test(w))) return ''
     const site = parts.find((w) => /^[a-c]$/.test(w))
     const split = parts.includes('smokes') || parts.includes('flashes')
@@ -149,6 +158,7 @@
 
   const SECTIONS: { id: string; title: string; hint: string; kinds: string[] }[] = [
     { id: 'overview', title: 'Overview', hint: 'The summary card and the whole team on each side.', kinds: ['summary', 'team'] },
+    { id: 'situations', title: 'Situations', hint: 'Where they stand in the first 10 seconds of each round type, per side and buy.', kinds: ['situation'] },
     { id: 't', title: 'T side', hint: 'How they get onto each site, with the utility, and how they play after the plant.', kinds: ['executes', 'postplant'] },
     { id: 'ct', title: 'CT side', hint: 'Where they come from to retake each site.', kinds: ['retake'] },
     { id: 'utility', title: 'Utility', hint: 'Where their grenades land on each side.', kinds: ['utility'] },

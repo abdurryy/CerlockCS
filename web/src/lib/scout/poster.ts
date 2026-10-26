@@ -23,15 +23,15 @@ const SURFACE = '#12151a'
 const SURFACE_2 = '#181c22'
 const SHADE = 'rgba(11,13,17,0.9)'
 const EDGE = 'rgba(6,8,11,0.88)'
-const SMOKE_RADIUS = 144
-const FIRE_RADIUS = 110
+export const SMOKE_RADIUS = 144
+export const FIRE_RADIUS = 110
 const HEAT_BOOST = 1.15
 // The logo is a quiet watermark.
-const LOGO_ALPHA = 0.6
+export const LOGO_ALPHA = 0.6
 const LOGO_H = 72
 // The lockup's wordmark baseline, as a share of the image height.
 const WORD_BASE = 362.1 / 512
-const LOGO_RATIO = 1672 / 512
+export const LOGO_RATIO = 1672 / 512
 
 // Vertical grid, from the top or the bottom of the image.
 const KICKER_Y = 96
@@ -195,7 +195,7 @@ const logos = new Map<number, Promise<HTMLImageElement | null>>()
 
 // logoAt rasterises the lockup at the pixel height it is drawn at, so it
 // stays sharp. The SVG gets an explicit size, some browsers need one.
-function logoAt(h: number): Promise<HTMLImageElement | null> {
+export function logoAt(h: number): Promise<HTMLImageElement | null> {
   let p = logos.get(h)
   if (!p) {
     logoSvg ??= fetch(logoUrl)
@@ -244,7 +244,12 @@ async function iconsReady(names: string[]) {
 }
 
 export async function assets(S: number): Promise<HTMLImageElement | null> {
-  const [img] = await Promise.all([logoAt(Math.round(LOGO_H * (S / BASE))), fontsReady(), iconsReady(ICONS)])
+  return assetsAt(Math.round(LOGO_H * (S / BASE)))
+}
+
+// assetsAt is assets with the logo at a given pixel height.
+export async function assetsAt(logoH: number, more: string[] = []): Promise<HTMLImageElement | null> {
+  const [img] = await Promise.all([logoAt(logoH), fontsReady(), iconsReady([...ICONS, ...more])])
   return img
 }
 
@@ -252,7 +257,7 @@ export async function assets(S: number): Promise<HTMLImageElement | null> {
 
 type Box = [number, number, number, number]
 
-interface Floor {
+export interface Floor {
   canvas: HTMLCanvasElement
   outline: Path2D
   box: Box
@@ -442,24 +447,24 @@ function heatImage(grid: Float32Array, n: number, sigma: number, soft: boolean):
 
 let scratch: HTMLCanvasElement | null = null
 
-function scratchCanvas(S: number): CanvasRenderingContext2D {
-  if (!scratch || scratch.width !== S) scratch = canvas(S, S)
+function scratchCanvas(w: number, h = w): CanvasRenderingContext2D {
+  if (!scratch || scratch.width !== w || scratch.height !== h) scratch = canvas(w, h)
   const ctx = scratch.getContext('2d')!
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.globalCompositeOperation = 'source-over'
   ctx.globalAlpha = 1
-  ctx.clearRect(0, 0, S, S)
+  ctx.clearRect(0, 0, w, h)
   return ctx
 }
 
 // View maps radar pixels to image pixels.
-interface View {
+export interface View {
   k: number
   ox: number
   oy: number
 }
 
-interface Rect {
+export interface Rect {
   x: number
   y: number
   w: number
@@ -470,14 +475,14 @@ function overlaps(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
 }
 
-function fitText(ctx: CanvasRenderingContext2D, text: string, max: number): string {
+export function fitText(ctx: CanvasRenderingContext2D, text: string, max: number): string {
   if (ctx.measureText(text).width <= max) return text
   let t = text
   while (t.length > 1 && ctx.measureText(`${t}…`).width > max) t = t.slice(0, -1)
   return `${t.trimEnd()}…`
 }
 
-function font(ctx: CanvasRenderingContext2D, weight: number, size: number, u: number, spacing = 0, family = DISPLAY) {
+export function font(ctx: CanvasRenderingContext2D, weight: number, size: number, u: number, spacing = 0, family = DISPLAY) {
   ctx.font = `${weight} ${Math.round(size * u)}px ${family}`
   setSpacing(ctx, spacing ? `${(spacing * size * u).toFixed(2)}px` : '0px')
 }
@@ -494,17 +499,25 @@ function drawBackground(ctx: CanvasRenderingContext2D, S: number) {
 }
 
 function drawGrid(ctx: CanvasRenderingContext2D, info: MapInfo, v: View, S: number, u: number) {
+  gridLines(ctx, info, v, { x: 0, y: (MAP_TOP - 24) * u, w: S, h: S - (MAP_BOTTOM - 20) * u - (MAP_TOP - 24) * u }, u, 'y')
+}
+
+// gridLines draws the faint world grid over an area, fading out towards
+// its top and bottom, or towards all four edges.
+export function gridLines(ctx: CanvasRenderingContext2D, info: MapInfo, v: View, area: Rect, u: number, fade: 'y' | 'xy') {
   const scale = info.scale || 5
   const step = (512 / scale) * v.k
   if (step < 8) return
   // World x = 0 and y = 0, so lines sit on round world coordinates.
   const ox = v.ox + (-info.posX / scale) * v.k
   const oy = v.oy + (info.posY / scale) * v.k
-  const top = (MAP_TOP - 24) * u
-  const bottom = S - (MAP_BOTTOM - 20) * u
+  const left = area.x
+  const right = area.x + area.w
+  const top = area.y
+  const bottom = area.y + area.h
   const minor = new Path2D()
   const major = new Path2D()
-  for (let i = Math.ceil(-ox / step); ox + i * step <= S; i++) {
+  for (let i = Math.ceil((left - ox) / step); ox + i * step <= right; i++) {
     const x = Math.round(ox + i * step) + 0.5
     const p = i % 4 === 0 ? major : minor
     p.moveTo(x, top)
@@ -513,28 +526,36 @@ function drawGrid(ctx: CanvasRenderingContext2D, info: MapInfo, v: View, S: numb
   for (let i = Math.ceil((top - oy) / step); oy + i * step <= bottom; i++) {
     const y = Math.round(oy + i * step) + 0.5
     const p = i % 4 === 0 ? major : minor
-    p.moveTo(0, y)
-    p.lineTo(S, y)
+    p.moveTo(left, y)
+    p.lineTo(right, y)
   }
-  // The grid fades out towards the header and the footer.
-  const h = scratchCanvas(S)
+  const W = ctx.canvas.width
+  const H = ctx.canvas.height
+  const h = scratchCanvas(W, H)
   h.lineWidth = Math.max(1, u)
   h.strokeStyle = 'rgba(150,170,196,0.05)'
   h.stroke(minor)
   h.strokeStyle = 'rgba(150,170,196,0.09)'
   h.stroke(major)
   h.globalCompositeOperation = 'destination-in'
-  const fade = h.createLinearGradient(0, top, 0, bottom)
-  fade.addColorStop(0, 'rgba(0,0,0,0)')
-  fade.addColorStop(0.12, 'rgba(0,0,0,1)')
-  fade.addColorStop(0.88, 'rgba(0,0,0,1)')
-  fade.addColorStop(1, 'rgba(0,0,0,0)')
-  h.fillStyle = fade
-  h.fillRect(0, 0, S, S)
+  const edge = (a: number, b: number, horizontal: boolean) => {
+    const g = horizontal ? h.createLinearGradient(a, 0, b, 0) : h.createLinearGradient(0, a, 0, b)
+    g.addColorStop(0, 'rgba(0,0,0,0)')
+    g.addColorStop(0.12, 'rgba(0,0,0,1)')
+    g.addColorStop(0.88, 'rgba(0,0,0,1)')
+    g.addColorStop(1, 'rgba(0,0,0,0)')
+    return g
+  }
+  h.fillStyle = edge(top, bottom, false)
+  h.fillRect(0, 0, W, H)
+  if (fade === 'xy') {
+    h.fillStyle = edge(left, right, true)
+    h.fillRect(0, 0, W, H)
+  }
   ctx.drawImage(h.canvas, 0, 0)
 }
 
-function drawFloor(ctx: CanvasRenderingContext2D, floor: Floor, v: View, u: number) {
+export function drawFloor(ctx: CanvasRenderingContext2D, floor: Floor, v: View, u: number) {
   ctx.save()
   ctx.setTransform(v.k, 0, 0, v.k, v.ox, v.oy)
   ctx.imageSmoothingEnabled = true
@@ -551,7 +572,7 @@ function drawHeat(ctx: CanvasRenderingContext2D, c: Card, floor: Floor | null, v
   if (!c.heat) return
   const img = heatImage(c.heat, c.heatSize, c.sigma, c.hits.length > 0)
   if (!img) return
-  const h = scratchCanvas(S)
+  const h = scratchCanvas(S, S)
   h.setTransform(v.k, 0, 0, v.k, v.ox, v.oy)
   h.imageSmoothingEnabled = true
   h.imageSmoothingQuality = 'high'
@@ -567,7 +588,7 @@ function drawHeat(ctx: CanvasRenderingContext2D, c: Card, floor: Floor | null, v
 
 // drawLabels draws the bombsite badges and the callouts that fit around
 // what is already taken. Sites covered by plant marks skip their badge.
-function drawLabels(ctx: CanvasRenderingContext2D, st: Stage, level: number, v: View, u: number, taken: Rect[], plants: Rect[], quiet: boolean) {
+export function drawLabels(ctx: CanvasRenderingContext2D, st: Stage, level: number, v: View, u: number, taken: Rect[], plants: Rect[], quiet: boolean) {
   const placed: Rect[] = [...taken]
   const R = 18 * u
   for (const s of st.labels.sites) {
@@ -866,15 +887,18 @@ interface Head {
 }
 
 function drawLogo(ctx: CanvasRenderingContext2D, S: number, u: number, logoImg: HTMLImageElement | null) {
+  logoMark(ctx, logoImg, S - M * u, TITLE_Y * u, Math.round(LOGO_H * u))
+}
+
+// logoMark draws the logo h pixels tall with its right edge at right. The
+// wordmark's baseline sits on the title baseline and its top on the
+// title's cap height, the figure's feet hang below like a descender.
+export function logoMark(ctx: CanvasRenderingContext2D, logoImg: HTMLImageElement | null, right: number, baseline: number, h: number) {
   if (!logoImg) return
-  const h = Math.round(LOGO_H * u)
   const w = h * LOGO_RATIO
-  // The wordmark's baseline sits on the title baseline and its top on
-  // the title's cap height, the figure's feet hang below like a
-  // descender.
-  const y = TITLE_Y * u - WORD_BASE * h
+  const y = baseline - WORD_BASE * h
   ctx.globalAlpha = LOGO_ALPHA
-  ctx.drawImage(logoImg, Math.round(S - M * u - w), Math.round(y), Math.round(w), h)
+  ctx.drawImage(logoImg, Math.round(right - w), Math.round(y), Math.round(w), h)
   ctx.globalAlpha = 1
 }
 
@@ -883,7 +907,7 @@ function logoLeft(S: number, u: number): number {
   return S - M * u - LOGO_H * u * LOGO_RATIO - 40 * u
 }
 
-function sideChip(ctx: CanvasRenderingContext2D, side: number, x: number, y: number, u: number): number {
+export function sideChip(ctx: CanvasRenderingContext2D, side: number, x: number, y: number, u: number): number {
   const tc = teamColor(side)
   const text = side === 3 ? 'CT SIDE' : 'T SIDE'
   font(ctx, 700, 16, u, 0.1)

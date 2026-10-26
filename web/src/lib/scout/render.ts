@@ -39,6 +39,7 @@ export type ScoutKind =
   | 'openings'
   | 'pistol'
   | 'eco'
+  | 'situation'
   | 'awp'
   | 'deaths'
   | 'kills'
@@ -48,7 +49,7 @@ export type ScoutKind =
   | 'player-deaths'
 
 export const SCOUT_KINDS: ScoutKind[] = [
-  'summary', 'team', 'executes', 'postplant', 'retake', 'utility', 'openings', 'pistol', 'eco', 'awp', 'deaths', 'kills',
+  'summary', 'team', 'executes', 'postplant', 'retake', 'utility', 'openings', 'pistol', 'eco', 'situation', 'awp', 'deaths', 'kills',
   'player-early', 'player', 'player-kills', 'player-deaths',
 ]
 
@@ -525,6 +526,41 @@ function planCards(cx: Ctx, want: Set<ScoutKind>): Planned[] {
       ],
     })
   add('eco', () => [...ecoCards(scout.eco.ct, 3), ...ecoCards(scout.eco.t, 2)])
+
+  // One image per side and buy: where they stand in the first 10 seconds
+  // and what they do from there.
+  add('situation', () =>
+    scout.situations.flatMap((st) => {
+      const side = st.side === 'ct' ? 3 : 2
+      const buy = st.title.replace(/^(CT|T) /, '')
+      const plays: Stat[] =
+        st.side === 't'
+          ? [
+              { value: ratio(st.rushes, st.rounds), label: `On a site within ${Math.round(so.rushSeconds)}s` },
+              ...st.hits.slice(0, 2).map((h) => ({ value: ratio(h.rounds, st.rounds), label: `${h.site} hit, ${Math.round(h.avgTime)}s in` })),
+            ]
+          : [
+              ...st.stacks.slice(0, 2).map((x) => ({ value: ratio(x.rounds, st.rounds), label: `Stacked ${x.site}` })),
+              { value: ratio(st.pushes, st.rounds), label: 'Pushed early' },
+            ]
+      return heatCards(
+        info,
+        draft({
+          name: `${short}-${st.side}-situation-${st.buy}`,
+          kindOf: 'situation',
+          ...heading(cx, buy.charAt(0).toUpperCase() + buy.slice(1)),
+          side,
+          bits: ['First 10s', plural(st.rounds, 'round'), matches],
+          heatLabel: 'Time in the first 10s',
+          footer: [
+            { label: 'Record', stats: [{ value: ratio(st.won, st.rounds), label: `${st.won} of ${plural(st.rounds, 'round')} won` }] },
+            { label: 'What they do', stats: plays },
+          ],
+        }),
+        st.heat10,
+      )
+    }),
+  )
 
   const awpCards = (h: SideHeat, side: 2 | 3) => {
     const key = side === 3 ? 'ct' : 't'

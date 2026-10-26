@@ -12,11 +12,15 @@
 
 <script lang="ts">
   import { mapLabel } from '../lib/format'
-  import type { MapScout, PlaceShare } from '../lib/scout/types'
+  import type { MapScout, PlaceShare, Situation } from '../lib/scout/types'
   import { EQ } from '../lib/weapons'
   import GameIcon from './GameIcon.svelte'
   import ScoutGallery, { groupScout } from './ScoutGallery.svelte'
   import ScoutIcon from './ScoutIcon.svelte'
+  import ScoutRoles from './ScoutRoles.svelte'
+  import ScoutSituations from './ScoutSituations.svelte'
+  import ScoutTendencies from './ScoutTendencies.svelte'
+  import SituationPlayer from './SituationPlayer.svelte'
 
   // One map of the scouting report: what the team does there, then the
   // images.
@@ -36,6 +40,20 @@
   const groups = $derived(groupScout(set?.pictures ?? [], early))
   const drawing = $derived(!set || set.stage === 'waiting' || set.stage === 'drawing' || set.stage === 'saving')
   let sections: HTMLElement[] = $state([])
+  let watching = $state.raw<Situation | null>(null)
+  let opener: HTMLElement | null = null
+
+  function watch(s: Situation, from: HTMLElement | null) {
+    opener = from
+    watching = s
+  }
+
+  // Focus goes back to the button that opened the player.
+  function unwatch() {
+    watching = null
+    opener?.focus()
+    opener = null
+  }
 
   function jump(i: number) {
     sections[i]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -105,6 +123,13 @@
       <a class="game" href="#/replay/{r.id}" title="Open {r.name}"><ScoutIcon name="play" size={10} /><span>{r.name}</span><small>{r.rounds} rds</small></a>
     {/each}
   </div>
+
+  {#if m.situations && m.roles}
+    <ScoutTendencies scout={m} {teamName} onwatch={watch} />
+    <ScoutSituations scout={m} onwatch={watch} />
+    <ScoutRoles scout={m} />
+    <h3 class="more">Setups and site hits</h3>
+  {/if}
 
   <div class="cards">
     <article class="card">
@@ -236,6 +261,10 @@
     </div>
   {/if}
 </section>
+
+{#if watching}
+  <SituationPlayer scout={m} situation={watching} {teamName} onclose={unwatch} />
+{/if}
 
 <style>
   .map {
@@ -389,6 +418,11 @@
   .game small {
     color: var(--text-3);
     flex: none;
+  }
+
+  .more {
+    margin: 28px 0 12px;
+    font-size: 21px;
   }
 
   .cards {
