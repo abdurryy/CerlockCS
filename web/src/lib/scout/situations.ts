@@ -665,6 +665,8 @@ export function buildTrack(ctx: RoundCtx, read: RoundRead, replayId: string, opt
     won: ctx.won,
     hit: read.hit,
     hitTime: read.hitTime,
+    tick: Math.round(live),
+    rate,
     players: tp,
     events,
   }

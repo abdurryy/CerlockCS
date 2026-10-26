@@ -215,6 +215,10 @@ export interface SituationTrack {
   won: boolean
   hit: string
   hitTime: number
+  // The demo tick when the round went live and ticks per second, to jump
+  // there in CS2.
+  tick: number
+  rate: number
   players: TrackPlayer[]
   events: TrackEvent[]
 }

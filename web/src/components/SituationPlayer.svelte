@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { copyText } from '../lib/clipboard'
   import { mapLabel } from '../lib/format'
   import { clockText, hitMarks, Overlay, type FloorMode, type OverlayOptions } from '../lib/scout/overlay'
-  import type { MapScout, Situation } from '../lib/scout/types'
+  import type { MapScout, Situation, SituationTrack } from '../lib/scout/types'
   import { Cancelled, encodeVideo } from '../lib/scout/video'
   import { downloadBlob } from '../lib/zip'
   import Icon from './Icon.svelte'
@@ -31,6 +32,8 @@
   let floors = $state<FloorMode>('auto')
   let size = $state('1080')
   let progress = $state(-1)
+  let copiedRound = $state(-1)
+  let copyTimer: ReturnType<typeof setTimeout> | undefined
   let saved = $state('')
   let abort: AbortController | null = null
   let dialog: HTMLDivElement | undefined = $state()
@@ -239,6 +242,26 @@
     }
   }
 
+  // cs2Command jumps a demo open in CS2 to this moment of the round, and
+  // spectates the highlighted player.
+  function cs2Command(tr: SituationTrack): string {
+    const tick = Math.round(tr.tick + t * tr.rate)
+    const who = highlight ? (tr.players.find((p) => p.steamId === highlight)?.name ?? '') : ''
+    const name = who.replace(/[";]/g, '')
+    return `demo_gototick ${tick}${name ? `; spec_player "${name}"` : ''}`
+  }
+
+  function demoName(tr: SituationTrack): string {
+    return scout.replays.find((r) => r.id === tr.replayId)?.name ?? 'the demo'
+  }
+
+  async function copyCs2(tr: SituationTrack, i: number) {
+    if (!(await copyText(cs2Command(tr)))) return
+    copiedRound = i
+    clearTimeout(copyTimer)
+    copyTimer = setTimeout(() => (copiedRound = -1), 1600)
+  }
+
   function hitText(hit: string, time: number): string {
     if (!hit || time < 0) return 'No hit'
     return `${hit} at ${clockText(time)}`
@@ -336,7 +359,14 @@
                   <span class="wl" class:good={tr.won} class:bad={!tr.won}>{tr.won ? 'W' : 'L'}</span>
                 </label>
                 <span class="hitline faint">{hitText(tr.hit, tr.hitTime)}</span>
-                <button class="plain only" title="Show only this round" onclick={() => only(i)}>Only</button>
+                <span class="acts">
+                  <button class="plain only" title="Show only this round" onclick={() => only(i)}>Only</button>
+                  {#if tr.rate}
+                    <button class="plain cs2" class:done={copiedRound === i} title="Copy a console command that jumps to {clockText(t)} of this round. Open {demoName(tr)} in CS2 first." onclick={() => copyCs2(tr, i)}>
+                      {copiedRound === i ? 'Copied' : 'CS2'}
+                    </button>
+                  {/if}
+                </span>
               </li>
             {/each}
           </ul>
@@ -384,7 +414,7 @@
           </section>
         {/if}
 
-        <p class="keys faint">Space plays and pauses. Arrows move 1 s, with Shift one frame.</p>
+        <p class="keys faint">Space plays and pauses. Arrows move 1 s, with Shift one frame. CS2 copies a command for the console that jumps to this moment, with the demo open in the game.</p>
       </aside>
     </div>
   </div>
@@ -794,14 +824,38 @@
     font-size: 12.5px;
   }
 
-  .only {
+  .acts {
     grid-column: 2;
     grid-row: 1 / span 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .only,
+  .cs2 {
     height: 24px;
     padding: 0 8px;
     font-size: 12px;
     color: var(--text-3);
+  }
+
+  .only {
     visibility: hidden;
+  }
+
+  .cs2 {
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-sm);
+  }
+
+  .cs2:hover {
+    color: var(--text);
+  }
+
+  .cs2.done {
+    color: var(--good);
+    border-color: var(--good);
   }
 
   .rounds li:hover .only,
