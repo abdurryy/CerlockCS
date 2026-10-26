@@ -119,13 +119,28 @@ Teams in ESEA often have few league games to look at, but their players queue FA
 2. Paste the opponent's match room link (`https://www.faceit.com/en/cs2/room/1-...`) or their team page. Cerlock lists both teams with their players.
 3. Cerlock walks the last 100 matches of every player and keeps the ones where at least four of them were on the same side, newest first, with the map, the score and a link to the match room. You also see their map pool.
 4. Get the demos. Open each match room and click "Watch demo". Cerlock watches your Downloads folder and picks FACEIT demos up by itself (turn it off with `--downloads=false`), or you can drop them in. They are matched to the players by SteamID. If your key has download access (see the [FAQ](#faq)), Cerlock downloads them itself into `demos/faceit` in the data folder.
-5. Build the report. For every map you get 30+ PNG images in one style, with the team or player name in the top corner and the Cerlock logo in the other: a summary card, the whole team on CT and T, T executes per site with the utility and plants, post plant and retake positions, opening duels, utility with throw lines, pistol and eco rounds, AWP spots, kills and deaths, and per player their early CT and T positions. Download them one by one or as a zip per map.
+5. Build the report. For every map you get 30+ PNG images in one style, with the team or player name in the top corner and the Cerlock logo in the other: a summary card, the whole team on CT and T, T executes per site with the utility and plants, post plant and retake positions, opening duels, utility with throw lines, pistol and eco rounds, every round type on its own, where each player holds, AWP spots, kills and deaths, and per player their early CT and T positions. Download them one by one or as a zip per map.
 
 ![The scouting report of one map](docs/scout.png)
 
 <p>
   <img src="docs/poster-summary.png" width="49%" alt="Summary card of a team on Nuke">
   <img src="docs/poster-execute.png" width="49%" alt="A site execute on Nuke with utility and plants">
+</p>
+
+### Situations, roles and spots
+
+The report also splits their rounds by side and buy: pistol, eco, force, anti-eco and full buys. For each one you see where they stand in the first 10 and 20 seconds, how often they rush, stack a site or push early, and short notes like "On CT full buys at 15 s they were usually at Outside (6 of 6)".
+
+- **Watch** plays every round of a situation on the map at the same time, the first 30 seconds after freeze time, with the utility, the kills and where each player looks. Pick rounds, highlight one player and save it as an MP4 for your team's Discord, or save a single frame.
+- **Roles**: a guess per player, like A anchor, rotator or AWP on CT and entry, lurker or support on T, with how many rounds it is based on.
+- **Spots in game**: where each player usually stands 15 s into CT rounds and 20 s into T rounds, and the way they look. Copy one as `setpos` and `setang` for the console, or download a `.cfg` with an alias per spot and walk through them on a practice server with `spot_next`. Good for checking the angles they hold before you play them.
+- **CS2** next to every round in Watch copies a `demo_gototick` command for that moment (plus `spec_player` for the highlighted player), so you can jump there with the demo open in the game.
+
+![Six CT full buy rounds on Nuke on the map at the same time](docs/situation.png)
+
+<p>
+  <img src="docs/poster-spots.png" width="49%" alt="Where each player holds on CT, with the way they look">
 </p>
 
 The same exports work on a single demo: open it, click "Export heatmaps" (top right, or in the Players tab) and pick a team to get one image per player plus one for the whole team.
@@ -205,7 +220,7 @@ What it does not do (yet): there is no in game playback or video recording, no s
 
 #### Is it safe? Can it get me VAC banned?
 
-Cerlock never touches the game. It does not inject anything, hook into CS2 or read its memory, and it does not even need CS2 installed. It only reads demo files, the ones you download from your match history or a FACEIT room.
+Cerlock never touches the game. It does not inject anything, hook into CS2 or read its memory, and it does not even need CS2 installed. It only reads demo files, the ones you download from your match history or a FACEIT room. The spots config uses `sv_cheats 1`, which only works offline or on your own practice server.
 
 #### Does it upload my demos?
 
@@ -353,7 +368,7 @@ What I want to add next. If one of these matters to your team, say so in [Discus
 - [ ] Timeouts
 - [ ] Export lineups as `setpos` commands you can paste in a practice server
 - [ ] Self scout: the scouting report for your own team
-- [ ] Multi round overlay: several rounds on the map at the same time
+- [x] Multi round overlay: several rounds on the map at the same time
 - [ ] Exact line of sight from the map's collision mesh, instead of radar spotting
 - [ ] Spray control, using the recoil index and the shot pattern per weapon
 

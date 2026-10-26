@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.3.0
+
+Scouting by round type, videos of their rounds and their spots in game.
+
+New:
+
+- Rounds split by side and buy: pistol, eco, force, anti-eco and full buys. Each one shows where the team stands in the first 10 and 20 seconds, how often they rush, stack a site, push early or save
+- Watch: all rounds of one situation on the map at the same time, with utility, kills and where every player looks. Pick rounds, highlight a player, change the speed, and save it as an MP4 (WebM when the browser has no H.264) or a PNG frame
+- Roles per player: A anchor, B anchor, rotator, AWP or mid on CT, entry, lurker, support or AWP on T, with how many rounds it is based on
+- Tendencies: the strongest patterns of the team in plain words, with a button to copy them for Discord
+- Spots in game: where each player usually stands and looks, as `setpos` and `setang` commands, and a `.cfg` with an alias per spot. `spot_next` walks through all of them on a practice server
+- A CS2 button on every round in Watch copies `demo_gototick` for that moment, and `spec_player` for the highlighted player
+- New PNG images: one per round type and one per side with the spots
+
+How to run it:
+
+- Windows: download `cerlock-windows-amd64.exe` (or `cerlock-v0.3.0-windows-amd64.exe`) and double click it. Windows may warn about an unknown publisher since the exe is not signed, click "More info" and then "Run anyway".
+- Linux and macOS: download the `.tar.gz` for your system, extract it and run `./cerlock`.
+- For scouting you need a free FACEIT API key from developers.faceit.com, paste it in the Scout page.
+
 ## v0.2.0
 
 Scouting, a real Windows app and a new look.
