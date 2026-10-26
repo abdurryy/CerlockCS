@@ -4,7 +4,7 @@
 // as a track and writes plain notes with the numbers behind them.
 
 import { SLOT_COLORS } from '../colors'
-import { FLAG, type Replay } from '../replay'
+import { FLAG, lerpAngle, type Replay } from '../replay'
 import type { Grenade } from '../types'
 import { EQ } from '../weapons'
 import type { Binner } from './aggregate'
@@ -575,18 +575,22 @@ export function buildTrack(ctx: RoundCtx, read: RoundRead, replayId: string, opt
     const xs = new Float32Array(n)
     const ys = new Float32Array(n)
     const zs = new Float32Array(n)
+    const yaws = new Float32Array(n)
     const alive = new Uint8Array(n)
     const base = p * F
+    const hasYaw = r.pyaw.length > 0
     let dead = false
     let lx = 0
     let ly = 0
     let lz = 0
+    let lyaw = 0
     // Start from where they stood when the round went live.
     const f0 = lastAlive(r, base, ctx.a, Math.max(0, ctx.a - 64))
     if (f0 >= 0) {
       lx = bin.rx(r.px[base + f0])
       ly = bin.ry(r.py[base + f0])
       lz = r.pz[base + f0]
+      if (hasYaw) lyaw = (r.pyaw[base + f0] / 65535) * 360
     }
     for (let s = 0; s < n; s++) {
       if (!dead) {
@@ -595,6 +599,7 @@ export function buildTrack(ctx: RoundCtx, read: RoundRead, replayId: string, opt
           let x = r.px[j]
           let y = r.py[j]
           let z = r.pz[j]
+          let yaw = hasYaw ? (r.pyaw[j] / 65535) * 360 : 0
           const t = part[s]
           if (t > 0 && r.pflags[j + 1] & FLAG.alive) {
             const dx = r.px[j + 1] - x
@@ -603,19 +608,22 @@ export function buildTrack(ctx: RoundCtx, read: RoundRead, replayId: string, opt
               x += dx * t
               y += dy * t
               z += (r.pz[j + 1] - z) * t
+              if (hasYaw) yaw = lerpAngle(yaw, (r.pyaw[j + 1] / 65535) * 360, t)
             }
           }
           lx = bin.rx(x)
           ly = bin.ry(y)
           lz = z
+          lyaw = yaw
         } else dead = true
       }
       xs[s] = lx
       ys[s] = ly
       zs[s] = lz
+      yaws[s] = lyaw
       alive[s] = dead ? 0 : 1
     }
-    return { steamId: ctx.ids[k], name: ctx.names[k], color: ctx.colors[k], xs, ys, zs, alive }
+    return { steamId: ctx.ids[k], name: ctx.names[k], color: ctx.colors[k], xs, ys, zs, yaw: yaws, alive }
   })
   const until = live + opts.trackSeconds * rate
   const sec = (tick: number) => Math.max(0, (tick - live) / rate)

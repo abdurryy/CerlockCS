@@ -100,7 +100,7 @@ function groupByRound<T extends { round: number }>(items: T[] | null, rounds: nu
   return out
 }
 
-function lerpAngle(a: number, b: number, t: number): number {
+export function lerpAngle(a: number, b: number, t: number): number {
   let d = b - a
   if (d > 180) d -= 360
   if (d < -180) d += 360

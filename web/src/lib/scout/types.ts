@@ -185,6 +185,8 @@ export interface TrackPlayer {
   xs: Float32Array
   ys: Float32Array
   zs: Float32Array
+  // Where they look, in degrees like the game: 0 is +x, 90 is +y.
+  yaw: Float32Array
   alive: Uint8Array
 }
 

@@ -8,6 +8,7 @@ import { ACCENT, BAD, BG, GOOD, TEXT, TEXT_2, teamColor } from '../colors'
 import { mapLabel } from '../format'
 import { drawIcon } from '../icons.svelte'
 import { FONT, circle, flameSprite, roundRect, setSpacing, smokeSprite } from '../render/draw'
+import { lerpAngle } from '../replay'
 import type { MapInfo } from '../types'
 import { EQ, NADE_COLOR } from '../weapons'
 import { levelOf, scoutLabels, scoutOptions } from './aggregate'
@@ -68,6 +69,8 @@ const THROW_LINE = 2.5
 const FLASH_POP = 0.45
 const HE_POP = 0.55
 const DECOY_SHOW = 2
+// Half the width of a view cone, in radians.
+const CONE = 0.42
 
 // Layout units. Wide frames are laid out on 1920 x 1080, square ones on
 // the posters' 1600 grid.
@@ -130,8 +133,15 @@ export function arrange(boxes: Box[], area: Rect, gap: number): View[] {
   })
 }
 
+// rgba turns '#rrggbb' into a colour with alpha.
+function rgba(hex: string, a: number): string {
+  const n = parseInt(hex.slice(1, 7), 16)
+  if (hex.length < 7 || Number.isNaN(n)) return `rgba(236,239,243,${a})`
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`
+}
+
 // sampleAt reads a player's position at t seconds, between two samples.
-// out gets x, y, z and 1 when alive.
+// out gets x, y, z, 1 when alive, and the yaw.
 export function sampleAt(p: TrackPlayer, step: number, t: number, out: Float64Array) {
   const n = p.xs.length
   const s = Math.max(0, t / step)
@@ -142,10 +152,12 @@ export function sampleAt(p: TrackPlayer, step: number, t: number, out: Float64Ar
     out[0] = p.xs[i] + (p.xs[j] - p.xs[i]) * f
     out[1] = p.ys[i] + (p.ys[j] - p.ys[i]) * f
     out[2] = p.zs[i] + (p.zs[j] - p.zs[i]) * f
+    out[4] = p.yaw ? lerpAngle(p.yaw[i], p.yaw[j], f) : 0
   } else {
     out[0] = p.xs[i]
     out[1] = p.ys[i]
     out[2] = p.zs[i]
+    out[4] = p.yaw ? p.yaw[i] : 0
   }
   out[3] = p.alive[i]
 }
@@ -286,7 +298,7 @@ export class Overlay {
   // What the last frame was asked for, so a frame like the one before
   // skips the checks.
   private last = { w: 0, h: 0, rounds: null as OverlayOptions['rounds'], floors: undefined as FloorMode | undefined, hi: undefined as string | null | undefined, vis: [] as PTrack[] }
-  private pt = new Float64Array(4)
+  private pt = new Float64Array(5)
   private trailX = new Float64Array(0)
   private trailY = new Float64Array(0)
   private trailL = new Int8Array(0)
@@ -403,8 +415,11 @@ export class Overlay {
     for (const tr of vis) this.drawPops(ctx, L, tr, time, hi)
     for (const tr of vis) this.drawMarks(ctx, L, tr, time, hi)
     const trail = Math.max(0, opts.trail ?? TRAIL)
-    for (const tr of vis) for (const pp of tr.players) if (!hi || pp.p.steamId !== hi) this.drawPlayer(ctx, L, pp, time, trail, hi ? FADED : 1, false)
-    if (hi) for (const tr of vis) for (const pp of tr.players) if (pp.p.steamId === hi) this.drawPlayer(ctx, L, pp, time, trail, 1, true)
+    // View cones only when they stay readable: one round, or the
+    // highlighted player.
+    const cones = vis.length === 1
+    for (const tr of vis) for (const pp of tr.players) if (!hi || pp.p.steamId !== hi) this.drawPlayer(ctx, L, pp, time, trail, hi ? FADED : 1, false, cones && !hi)
+    if (hi) for (const tr of vis) for (const pp of tr.players) if (pp.p.steamId === hi) this.drawPlayer(ctx, L, pp, time, trail, 1, true, true)
     if (vis.length === 1) this.drawNames(ctx, L, vis[0], time, hi)
     ctx.restore()
     if (!vis.length) this.drawEmpty(ctx, L)
@@ -956,7 +971,7 @@ export class Overlay {
     this.trailA = new Float64Array(n)
   }
 
-  private drawPlayer(ctx: CanvasRenderingContext2D, L: Layout, pp: PPlayer, t: number, trail: number, alpha: number, focus: boolean) {
+  private drawPlayer(ctx: CanvasRenderingContext2D, L: Layout, pp: PPlayer, t: number, trail: number, alpha: number, focus: boolean, cone: boolean) {
     const { u } = L
     const p = pp.p
     const step = this.step
@@ -1034,6 +1049,39 @@ export class Overlay {
       drawShape(ctx, 'x', x, y, p.color, u * (focus ? 0.95 : 0.78))
     } else {
       const r = (focus ? 8 : 6.5) * u
+      // Radar y runs down, so the angle flips.
+      const a = (-pt[4] * Math.PI) / 180
+      const ca = Math.cos(a)
+      const sa = Math.sin(a)
+      if (cone) {
+        const len = (focus ? 56 : 40) * u
+        const g = ctx.createRadialGradient(x, y, r, x, y, len)
+        g.addColorStop(0, rgba(p.color, 0.42))
+        g.addColorStop(1, rgba(p.color, 0))
+        ctx.fillStyle = g
+        ctx.beginPath()
+        ctx.moveTo(x, y)
+        ctx.arc(x, y, len, a - CONE, a + CONE)
+        ctx.closePath()
+        ctx.fill()
+      }
+      // A small pointer for where they look.
+      const tip = r + 6 * u
+      const side = 0.62
+      ctx.fillStyle = EDGE
+      ctx.beginPath()
+      ctx.moveTo(x + ca * (tip + 1.6 * u), y + sa * (tip + 1.6 * u))
+      ctx.lineTo(x + Math.cos(a - side) * (r + 1 * u), y + Math.sin(a - side) * (r + 1 * u))
+      ctx.lineTo(x + Math.cos(a + side) * (r + 1 * u), y + Math.sin(a + side) * (r + 1 * u))
+      ctx.closePath()
+      ctx.fill()
+      ctx.fillStyle = TEXT
+      ctx.beginPath()
+      ctx.moveTo(x + ca * tip, y + sa * tip)
+      ctx.lineTo(x + Math.cos(a - side * 0.8) * r, y + Math.sin(a - side * 0.8) * r)
+      ctx.lineTo(x + Math.cos(a + side * 0.8) * r, y + Math.sin(a + side * 0.8) * r)
+      ctx.closePath()
+      ctx.fill()
       ctx.fillStyle = EDGE
       circle(ctx, x, y, r + 2.2 * u)
       ctx.fill()
