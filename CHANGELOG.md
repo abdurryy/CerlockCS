@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.3.3
+
+Situation videos are easier to read.
+
+- Map per player: every player gets a small map of their own, so you see where each one goes in all their rounds instead of 30 dots on one map. It's the default from 4 rounds up, in Watch and in Save all videos, and you can switch back to one map
+- When many rounds are on one map it shows less: the dead fade out after a few seconds instead of piling up as crosses, kill lines and flash pops are left out, smokes and molotovs are lighter and trails are shorter
+- Bomb plants show on every player's map
+
+How to run it:
+
+- Windows: download `cerlock-windows-amd64.exe` and double click it. Windows may warn about an unknown publisher since the exe is not signed, click "More info" and then "Run anyway".
+- Linux and macOS: download the `.tar.gz` for your system, extract it and run `./cerlock`.
+
 ## v0.3.2
 
 Videos stay under 20 MB.
