@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/abdurryy/CerlockCS/releases/latest"><img alt="Download for Windows" src="https://img.shields.io/badge/Download_for_Windows-F04B53?style=for-the-badge"></a>
+  <a href="https://github.com/abdurryy/CerlockCS/releases/latest/download/cerlock-windows-amd64.exe"><img alt="Download for Windows" src="https://img.shields.io/badge/Download_for_Windows-F04B53?style=for-the-badge"></a>
   &nbsp;
   <a href="https://github.com/abdurryy/CerlockCS/releases/latest"><img alt="Linux and macOS" src="https://img.shields.io/badge/Linux_and_macOS-20252C?style=for-the-badge"></a>
 </p>
