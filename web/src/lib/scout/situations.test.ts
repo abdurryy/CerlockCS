@@ -447,6 +447,15 @@ describe('buildTrack', () => {
     expect(p1.alive.every((a) => a === 1)).toBe(true)
   })
 
+  it('stops at the end of the round', () => {
+    expect(tr.end).toBe(30)
+    // Rounds here last 50 s, so a longer window ends with the round.
+    const whole = buildTrack(ctx, read, 'rid', { trackSeconds: 160, trackStep: 0.25 })
+    expect(whole.end).toBe(LENGTH)
+    expect(whole.players[1].xs.length).toBe(LENGTH * 4 + 1)
+    expect(whole.events.every((e) => e.t <= LENGTH)).toBe(true)
+  })
+
   it('stops a player at their death', () => {
     const p0 = tr.players[0]
     // Died at 16 s, sample 128.

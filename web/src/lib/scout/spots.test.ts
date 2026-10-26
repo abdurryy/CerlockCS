@@ -29,7 +29,7 @@ function player(id: string, x: number, y: number, yaw: number, alive = true): Tr
 }
 
 function track(round: number, players: TrackPlayer[]): SituationTrack {
-  return { replayId: 'r', round, label: `Round ${round}`, won: true, hit: '', hitTime: -1, tick: 0, rate: 64, players, events: [] }
+  return { replayId: 'r', round, label: `Round ${round}`, won: true, hit: '', hitTime: -1, end: 30, tick: 0, rate: 64, players, events: [] }
 }
 
 function situation(side: 'ct' | 't', tracks: SituationTrack[]): Situation {

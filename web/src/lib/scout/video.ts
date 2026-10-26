@@ -42,13 +42,41 @@ const FORMATS: Format[] = [
 const KEY_EVERY = 2
 const QUEUE = 6
 
+// pause gives the page a moment between frames. Timers are slowed to
+// once a second in a hidden or minimised window, message events are not,
+// so long batches keep going in the background.
+function pause(): Promise<void> {
+  return new Promise((resolve) => {
+    const ch = new MessageChannel()
+    ch.port1.onmessage = () => {
+      ch.port1.close()
+      resolve()
+    }
+    ch.port2.postMessage(null)
+  })
+}
+
+// drained waits until the encoder took a frame off its queue.
+function drained(encoder: VideoEncoder): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      encoder.removeEventListener('dequeue', done)
+      clearTimeout(timer)
+      resolve()
+    }
+    encoder.addEventListener('dequeue', done)
+    // Older browsers have no dequeue event.
+    const timer = setTimeout(done, 20)
+  })
+}
+
 export class Cancelled extends Error {
   constructor() {
     super('Cancelled')
   }
 }
 
-function bitrate(w: number, h: number, fps: number): number {
+export function bitrate(w: number, h: number, fps: number): number {
   // The map is mostly still, so this keeps text sharp and a 30 second
   // 1080p clip under 10 MB for Discord.
   return Math.round(Math.min(8e6, Math.max(1.5e6, w * h * fps * 0.04)))
@@ -108,10 +136,10 @@ export async function encodeVideo(job: VideoJob): Promise<Video> {
       encoder.encode(frame, { keyFrame: i % (KEY_EVERY * job.fps) === 0 })
       frame.close()
       // Let the encoder catch up, and the page breathe.
-      while (encoder.encodeQueueSize > QUEUE) await new Promise((r) => setTimeout(r, 4))
+      while (encoder.encodeQueueSize > QUEUE) await drained(encoder)
       if (i % 8 === 0) {
         job.onprogress?.(i / frames)
-        await new Promise((r) => setTimeout(r, 0))
+        await pause()
       }
     }
     await encoder.flush()

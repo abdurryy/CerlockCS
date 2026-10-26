@@ -442,7 +442,7 @@ describe('ScoutBuilder', () => {
     const b = new ScoutBuilder(ROSTER)
     b.add(r, 'r1', 'one.dem', INFO)
     const [s] = b.result()
-    expect(scoutOptions(s)).toMatchObject({ rushSeconds: 25, setupSeconds: 15, trackSeconds: 30, trackStep: 0.125 })
+    expect(scoutOptions(s)).toMatchObject({ rushSeconds: 25, setupSeconds: 15, trackSeconds: 160, trackStep: 0.25 })
     // Round 0 is the CT pistol, round 1 a T eco.
     expect(s.situations.map((x) => [x.key, x.title, x.rounds, x.won])).toEqual([
       ['ct-pistol', 'CT pistol rounds', 1, 1],
@@ -461,14 +461,16 @@ describe('ScoutBuilder', () => {
     expect(t.label).toBe('Round 1')
     expect(t.won).toBe(true)
     expect(t.players.map((p) => [p.name, p.color])).toEqual([['Bee', rosterColor(0)], ['Ace', rosterColor(1)]])
+    // The track runs to the end of the 40 s round, every 0.25 s.
+    expect(t.end).toBe(40)
     // Ace stands on A at radar (100, 124) the whole time.
     const ace = t.players[1]
-    expect(ace.xs.length).toBe(241)
-    expect([ace.xs[80], ace.ys[80]]).toEqual([100, 124])
+    expect(ace.xs.length).toBe(161)
+    expect([ace.xs[40], ace.ys[40]]).toEqual([100, 124])
     // Bee dies at frame 60, 12.5 s after freeze time.
     const bee = t.players[0]
-    expect(bee.alive[99]).toBe(1)
-    expect(bee.alive[100]).toBe(0)
+    expect(bee.alive[49]).toBe(1)
+    expect(bee.alive[50]).toBe(0)
     // The HE at tick 500 and Ace's kill at tick 500.
     expect(t.events.map((e) => [e.kind, e.player])).toEqual([['he', 'Ace'], ['kill', 'Ace']])
     expect(eco.tracks[0].hit).toBe('B')

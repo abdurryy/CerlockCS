@@ -3,23 +3,18 @@
   import { mapLabel } from '../lib/format'
   import { clockText, hitMarks, Overlay, type FloorMode, type OverlayOptions } from '../lib/scout/overlay'
   import type { MapScout, Situation, SituationTrack } from '../lib/scout/types'
-  import { Cancelled, encodeVideo } from '../lib/scout/video'
+  import { Cancelled } from '../lib/scout/video'
+  import { FPS, lengthSeconds, renderVideo, sizeOf, VIDEO_LENGTHS, VIDEO_SIZES, videoLength } from '../lib/scout/videos'
   import { downloadBlob } from '../lib/zip'
   import Icon from './Icon.svelte'
   import { fileName } from './ScoutGallery.svelte'
   import ScoutIcon from './ScoutIcon.svelte'
 
-  // Plays the first seconds of every round of one situation on the map at
-  // once, and saves it as a video or a still.
+  // Plays every round of one situation on the map at once, from freeze
+  // time to the end of the round, and saves it as a video or a still.
   let { scout, situation, teamName = '', onclose }: { scout: MapScout; situation: Situation; teamName?: string; onclose?: () => void } = $props()
 
-  const SPEEDS = [0.5, 1, 2]
-  const SIZES = [
-    { id: '1080', label: '1080p', w: 1920, h: 1080 },
-    { id: '720', label: '720p', w: 1280, h: 720 },
-    { id: 'square', label: 'Square', w: 1080, h: 1080 },
-  ]
-  const FPS = 30
+  const SPEEDS = [0.5, 1, 2, 4]
 
   let overlay = $state.raw<Overlay | null>(null)
   let error = $state('')
@@ -31,6 +26,7 @@
   let highlight = $state<string | null>(null)
   let floors = $state<FloorMode>('auto')
   let size = $state('1080')
+  let length = $state('round')
   let progress = $state(-1)
   let copiedRound = $state(-1)
   let copyTimer: ReturnType<typeof setTimeout> | undefined
@@ -45,11 +41,13 @@
   let tick = $state(0)
 
   const s = $derived(situation)
-  const duration = $derived(overlay?.duration ?? 30)
-  const step = $derived(overlay?.step ?? 0.125)
-  const exporting = $derived(progress >= 0)
   // One array per change of the picks, the overlay keys its cache on it.
   const rounds = $derived.by(() => (picked.every(Boolean) ? null : picked.flatMap((on, i) => (on ? [i] : []))))
+  // As long as the longest of the picked rounds.
+  const duration = $derived(overlay ? overlay.durationOf(rounds) : 30)
+  const videoSecs = $derived(overlay ? videoLength(overlay, rounds, lengthSeconds(length)) : 0)
+  const step = $derived(overlay?.step ?? 0.25)
+  const exporting = $derived(progress >= 0)
   const shown = $derived(rounds ? rounds.map((i) => s.tracks[i]) : s.tracks)
   const marks = $derived(hitMarks(shown, duration, 10, 600))
   const opts = $derived<OverlayOptions>({ rounds, highlight, floors })
@@ -166,7 +164,6 @@
 
   async function saveVideo() {
     if (!overlay || exporting) return
-    const sz = SIZES.find((x) => x.id === size) ?? SIZES[0]
     playing = false
     saved = ''
     error = ''
@@ -175,16 +172,7 @@
     const o = overlay
     const view = opts
     try {
-      await o.prepare(sz.w, sz.h)
-      const v = await encodeVideo({
-        width: sz.w,
-        height: sz.h,
-        fps: FPS,
-        duration: o.duration,
-        draw: (c, at) => o.draw(c, at, view),
-        onprogress: (p) => (progress = p),
-        signal: abort.signal,
-      })
+      const v = await renderVideo(o, view, sizeOf(size), lengthSeconds(length), (p) => (progress = p), abort.signal)
       const name = `${baseName}.${v.ext}`
       downloadBlob(v.blob, name)
       saved = name
@@ -199,7 +187,7 @@
 
   async function saveFrame() {
     if (!overlay || exporting) return
-    const sz = SIZES.find((x) => x.id === size) ?? SIZES[0]
+    const sz = sizeOf(size)
     await overlay.prepare(sz.w, sz.h)
     const c = document.createElement('canvas')
     c.width = sz.w
@@ -278,7 +266,7 @@
       <span class="tag {s.side}">{s.side.toUpperCase()}</span>
       <div class="htext">
         <h2 id="sp-title">{s.title}</h2>
-        <span>{mapLabel(scout.map)}{teamName ? `, ${teamName}` : ''}. {s.tracks.length} {s.tracks.length === 1 ? 'round' : 'rounds'}, the first {Math.round(duration)} s after freeze time.</span>
+        <span>{mapLabel(scout.map)}{teamName ? `, ${teamName}` : ''}. {s.tracks.length} {s.tracks.length === 1 ? 'round' : 'rounds'}, from freeze time to the end of the round ({clockText(duration)}).</span>
       </div>
       <button class="plain close" title="Close (Esc)" aria-label="Close" onclick={close}><Icon name="x" size={16} /></button>
     </header>
@@ -319,8 +307,13 @@
 
         <div class="export">
           <div class="seg" role="group" aria-label="Video size">
-            {#each SIZES as z (z.id)}
+            {#each VIDEO_SIZES as z (z.id)}
               <button class:on={size === z.id} aria-pressed={size === z.id} title="{z.w} x {z.h}" onclick={() => (size = z.id)}>{z.label}</button>
+            {/each}
+          </div>
+          <div class="seg" role="group" aria-label="Video length">
+            {#each VIDEO_LENGTHS as l (l.id)}
+              <button class:on={length === l.id} aria-pressed={length === l.id} onclick={() => (length = l.id)}>{l.label}</button>
             {/each}
           </div>
           <button class="primary" disabled={!overlay || exporting} onclick={saveVideo}>
@@ -335,7 +328,7 @@
             {:else if saved}
               <span class="faint">Saved {saved}</span>
             {:else}
-              <span class="faint">{Math.round(duration)} s at {FPS} fps, as shown here</span>
+              <span class="faint">{clockText(videoSecs)} at {FPS} fps, as shown here</span>
             {/if}
           </span>
         </div>

@@ -24,7 +24,8 @@ export interface ScoutOptions {
   // Seconds after freeze time where the CT setup is read, for stacks and
   // roles.
   setupSeconds: number
-  // Length of the round tracks in seconds, and the time between samples.
+  // Longest round track in seconds, tracks stop when the round is
+  // decided, and the time between samples.
   trackSeconds: number
   trackStep: number
 }
@@ -36,8 +37,9 @@ export const DEFAULT_SCOUT_OPTIONS: ScoutOptions = {
   earlyTSeconds: 25,
   rushSeconds: 25,
   setupSeconds: 15,
-  trackSeconds: 30,
-  trackStep: 0.125,
+  // A whole round: 1:55 plus 40 s of bomb.
+  trackSeconds: 160,
+  trackStep: 0.25,
 }
 
 // HeatGrid is radar space (1024x1024) binned into size x size cells, one
@@ -215,6 +217,9 @@ export interface SituationTrack {
   won: boolean
   hit: string
   hitTime: number
+  // Seconds after freeze time when the round was decided, the track
+  // stops there.
+  end: number
   // The demo tick when the round went live and ticks per second, to jump
   // there in CS2.
   tick: number
@@ -250,7 +255,7 @@ export interface Situation {
   // Roster positions in the first 10 and 20 seconds.
   heat10: HeatGrid
   heat20: HeatGrid
-  // One per round, from freeze time to trackSeconds after.
+  // One per round, from freeze time to the end of the round.
   tracks: SituationTrack[]
   // Patterns in plain words, strongest first.
   notes: string[]

@@ -46,6 +46,8 @@ export interface OverlayOptions {
   floors?: FloorMode
   // Seconds of trail behind each player.
   trail?: number
+  // Cuts the time bar at this many seconds, for a shorter video.
+  length?: number
 }
 
 const TEXT_3 = '#6e7883'
@@ -71,6 +73,8 @@ const HE_POP = 0.55
 const DECOY_SHOW = 2
 // Half the width of a view cone, in radians.
 const CONE = 0.42
+// Seconds a round takes to fade out once it is over.
+const ENDED_FADE = 1.5
 
 // Layout units. Wide frames are laid out on 1920 x 1080, square ones on
 // the posters' 1600 grid.
@@ -131,6 +135,21 @@ export function arrange(boxes: Box[], area: Rect, gap: number): View[] {
     at += (across ? bw : bh) + gap
     return { k, ox: x - b[0] * k, oy: y - b[1] * k }
   })
+}
+
+// fadeOf is 1 while a round is going and drops to 0 just after its end,
+// so the rounds that are still going stand out.
+function fadeOf(tr: SituationTrack, t: number): number {
+  const end = tr.end
+  if (!(end >= 0) || t <= end) return 1
+  return Math.max(0, 1 - (t - end) / ENDED_FADE)
+}
+
+// lengthOf is how long the longest of the rounds lasted, in whole seconds.
+export function lengthOf(list: readonly SituationTrack[], max: number): number {
+  let longest = 0
+  for (const tr of list) longest = Math.max(longest, tr.end >= 0 ? tr.end : max)
+  return Math.max(1, Math.min(max, Math.ceil(longest - 1e-6)))
 }
 
 // rgba turns '#rrggbb' into a colour with alpha.
@@ -281,8 +300,11 @@ function fireSprite(): HTMLCanvasElement {
 // Overlay draws one situation. Make it with Overlay.create, then call
 // draw for every frame.
 export class Overlay {
+  // Seconds from freeze time to the end of the longest round.
   readonly duration: number
   readonly step: number
+  // The length of the rounds on screen, for the time bar.
+  private span = 0
   // Called when something that was loading is in, so a paused view can
   // redraw.
   onchange: (() => void) | null = null
@@ -297,7 +319,7 @@ export class Overlay {
   private bg: { key: string; canvas: HTMLCanvasElement; layout: Layout } | null = null
   // What the last frame was asked for, so a frame like the one before
   // skips the checks.
-  private last = { w: 0, h: 0, rounds: null as OverlayOptions['rounds'], floors: undefined as FloorMode | undefined, hi: undefined as string | null | undefined, vis: [] as PTrack[] }
+  private last = { w: 0, h: 0, rounds: null as OverlayOptions['rounds'], floors: undefined as FloorMode | undefined, hi: undefined as string | null | undefined, length: undefined as number | undefined, vis: [] as PTrack[] }
   private pt = new Float64Array(5)
   private trailX = new Float64Array(0)
   private trailY = new Float64Array(0)
@@ -313,7 +335,8 @@ export class Overlay {
   ) {
     const so = scoutOptions(scout)
     this.step = so.trackStep || 0.125
-    this.duration = so.trackSeconds || 30
+    this.duration = lengthOf(situation.tracks, so.trackSeconds || 30)
+    this.span = this.duration
     const info = scout.info
     this.heights = situation.heat20.levels.map((l) => {
       let s = 0
@@ -333,6 +356,12 @@ export class Overlay {
     const labels = scoutLabels(scout) ?? { callouts: [], sites: [] }
     const [stage] = await Promise.all([stageFor(scout.info, labels, [situation.heat20, scout.team.ct, scout.team.t]), assetsAt(60, ['hud/dead', 'weapon/c4'])])
     return new Overlay(scout, situation, stage, opts.teamName?.trim() ?? '')
+  }
+
+  // durationOf is the length of a video of these rounds, all when null.
+  durationOf(rounds: readonly number[] | null | undefined): number {
+    if (!rounds) return this.duration
+    return lengthOf(rounds.flatMap((i) => (this.tracks[i] ? [this.tracks[i].track] : [])), this.duration)
   }
 
   // floorCount is how many floors the map has.
@@ -390,37 +419,44 @@ export class Overlay {
     const ctx = target.getContext('2d') as CanvasRenderingContext2D | null
     if (!ctx) return
     const last = this.last
-    const same = !!this.bg && last.w === w && last.h === h && last.rounds === opts.rounds && last.floors === opts.floors && last.hi === opts.highlight
+    const same = !!this.bg && last.w === w && last.h === h && last.rounds === opts.rounds && last.floors === opts.floors && last.hi === opts.highlight && last.length === opts.length
     const vis = same ? last.vis : this.visible(opts)
+    if (!same) this.span = lengthOf(vis.map((v) => v.track), opts.length && opts.length > 0 ? Math.min(opts.length, this.duration) : this.duration)
     const bg = same ? this.bg! : this.background(w, h, opts, vis)
     last.w = w
     last.h = h
     last.rounds = opts.rounds
     last.floors = opts.floors
     last.hi = opts.highlight
+    last.length = opts.length
     last.vis = vis
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.globalAlpha = 1
     ctx.globalCompositeOperation = 'source-over'
     ctx.drawImage(bg.canvas, 0, 0)
     const L = bg.layout
-    const time = Math.max(0, Math.min(this.duration, t))
+    const time = Math.max(0, Math.min(this.span, t))
     const hi = opts.highlight ?? null
+    // Rounds that are over fade out and then leave the map.
+    const on = vis.filter((tr) => fadeOf(tr.track, time) > 0)
     // Clip to the map area so nothing runs into the side column.
     ctx.save()
     ctx.beginPath()
     ctx.rect(L.map.x, L.map.y, L.map.w, L.map.h)
     ctx.clip()
-    for (const tr of vis) this.drawAreas(ctx, L, tr, time, hi)
-    for (const tr of vis) this.drawPops(ctx, L, tr, time, hi)
-    for (const tr of vis) this.drawMarks(ctx, L, tr, time, hi)
+    for (const tr of on) this.drawAreas(ctx, L, tr, time, hi)
+    for (const tr of on) this.drawPops(ctx, L, tr, time, hi)
+    for (const tr of on) this.drawMarks(ctx, L, tr, time, hi)
     const trail = Math.max(0, opts.trail ?? TRAIL)
     // View cones only when they stay readable: one round, or the
     // highlighted player.
     const cones = vis.length === 1
-    for (const tr of vis) for (const pp of tr.players) if (!hi || pp.p.steamId !== hi) this.drawPlayer(ctx, L, pp, time, trail, hi ? FADED : 1, false, cones && !hi)
-    if (hi) for (const tr of vis) for (const pp of tr.players) if (pp.p.steamId === hi) this.drawPlayer(ctx, L, pp, time, trail, 1, true, true)
-    if (vis.length === 1) this.drawNames(ctx, L, vis[0], time, hi)
+    for (const tr of on) {
+      const f = fadeOf(tr.track, time)
+      for (const pp of tr.players) if (!hi || pp.p.steamId !== hi) this.drawPlayer(ctx, L, pp, time, trail, (hi ? FADED : 1) * f, false, cones && !hi)
+    }
+    if (hi) for (const tr of on) for (const pp of tr.players) if (pp.p.steamId === hi) this.drawPlayer(ctx, L, pp, time, trail, fadeOf(tr.track, time), true, true)
+    if (vis.length === 1 && on.length) this.drawNames(ctx, L, vis[0], time, hi)
     ctx.restore()
     if (!vis.length) this.drawEmpty(ctx, L)
     this.drawClock(ctx, L, time)
@@ -430,7 +466,7 @@ export class Overlay {
 
   private background(w: number, h: number, opts: OverlayOptions, vis: PTrack[]): { canvas: HTMLCanvasElement; layout: Layout } {
     const floors = floorsFor(this.heights, opts.floors ?? 'auto')
-    const key = [w, h, floors.join(','), opts.highlight ?? '', vis.map((v) => this.tracks.indexOf(v)).join(',')].join('|')
+    const key = [w, h, floors.join(','), opts.highlight ?? '', this.span, vis.map((v) => this.tracks.indexOf(v)).join(',')].join('|')
     if (this.bg && this.bg.key === key) return this.bg
     const layout = this.layoutFor(w, h, floors)
     const canvas = this.bg && this.bg.canvas.width === w && this.bg.canvas.height === h ? this.bg.canvas : canvasOf(w, h)
@@ -711,18 +747,19 @@ export class Overlay {
   private paintBar(ctx: CanvasRenderingContext2D, L: Layout, vis: PTrack[]) {
     const { u } = L
     const { x, y, w } = L.bar
-    const D = this.duration
+    const D = this.span
     ctx.fillStyle = SURFACE_2
     roundRect(ctx, x, y - 3 * u, w, 6 * u, 3 * u)
     ctx.fill()
     font(ctx, 600, L.wide ? 14 : 13, u, 0.08)
     ctx.fillStyle = TEXT_3
     ctx.textBaseline = 'alphabetic'
-    const every = D > 40 ? 20 : 10
+    // Long rounds read better as a clock: 0:30, 1:00.
+    const every = D > 100 ? 30 : D > 40 ? 20 : 10
     for (let s = 0; s <= D + 1e-6; s += every) {
       const tx = x + (s / D) * w
       ctx.textAlign = s === 0 ? 'left' : s >= D - 1e-6 ? 'right' : 'center'
-      ctx.fillText(`${s}s`, tx, y + 26 * u)
+      ctx.fillText(D > 60 ? clockText(s) : `${s}s`, tx, y + 26 * u)
       ctx.fillStyle = LINE_2
       ctx.fillRect(Math.round(tx - 0.5 * u), y - 7 * u, Math.max(1, u), 14 * u)
       ctx.fillStyle = TEXT_3
@@ -1139,7 +1176,7 @@ export class Overlay {
   private drawClock(ctx: CanvasRenderingContext2D, L: Layout, t: number) {
     const { u } = L
     const { x, y, w } = L.bar
-    const k = this.duration > 0 ? t / this.duration : 0
+    const k = this.span > 0 ? Math.min(1, t / this.span) : 0
     ctx.fillStyle = ACCENT
     roundRect(ctx, x, y - 3 * u, Math.max(6 * u, w * k), 6 * u, 3 * u)
     ctx.fill()

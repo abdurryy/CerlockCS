@@ -113,8 +113,9 @@ export function findSpots(
         const p = tr.players.find((q) => q.steamId === role.steamId)
         if (!p) continue
         of++
-        const i = Math.min(p.xs.length - 1, Math.round(at / step))
-        if (i < 0 || !p.alive[i]) continue
+        // Rounds that were over by then have no spot.
+        const i = Math.round(at / step)
+        if (i < 0 || i >= p.xs.length || !p.alive[i]) continue
         samples.push({ rx: p.xs[i], ry: p.ys[i], z: p.zs[i], yaw: p.yaw ? p.yaw[i] : 0, level: levelOf(info, p.zs[i]) })
       }
       const near = (a: Sample, b: Sample) => a.level === b.level && (a.rx - b.rx) ** 2 + (a.ry - b.ry) ** 2 <= R * R

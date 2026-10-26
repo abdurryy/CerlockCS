@@ -549,16 +549,17 @@ export function throwSpot(r: Replay, g: Grenade): [number, number, number] | und
   return [r.px[j], r.py[j], r.pz[j]]
 }
 
-// buildTrack samples the roster from the moment the round went live to
-// trackSeconds after, every trackStep seconds. The label is filled in
-// when the scout is finished.
+// buildTrack samples the roster from the moment the round went live until
+// it was decided, at most trackSeconds, every trackStep seconds. The label
+// is filled in when the scout is finished.
 export function buildTrack(ctx: RoundCtx, read: RoundRead, replayId: string, opts: TrackOptions): SituationTrack {
   const { r, i, live, players, bin } = ctx
   const F = r.frames
   const rate = r.rate
   const step = Math.max(0.01, opts.trackStep)
-  const n = Math.max(1, Math.floor(opts.trackSeconds / step + 1e-6) + 1)
   const end = r.match.rounds[i].endTick
+  const length = Math.max(0, Math.min(opts.trackSeconds, (end - live) / rate))
+  const n = Math.max(1, Math.floor(length / step + 1e-6) + 1)
   // The frame and the share of the way to the next frame for each sample,
   // the same for every player.
   const frame = new Int32Array(n)
@@ -625,7 +626,7 @@ export function buildTrack(ctx: RoundCtx, read: RoundRead, replayId: string, opt
     }
     return { steamId: ctx.ids[k], name: ctx.names[k], color: ctx.colors[k], xs, ys, zs, yaw: yaws, alive }
   })
-  const until = live + opts.trackSeconds * rate
+  const until = Math.min(end, live + opts.trackSeconds * rate)
   const sec = (tick: number) => Math.max(0, (tick - live) / rate)
   const name = new Map<number, string>()
   players.forEach((p, k) => name.set(p, ctx.names[k]))
@@ -665,6 +666,7 @@ export function buildTrack(ctx: RoundCtx, read: RoundRead, replayId: string, opt
     won: ctx.won,
     hit: read.hit,
     hitTime: read.hitTime,
+    end: length,
     tick: Math.round(live),
     rate,
     players: tp,
