@@ -108,6 +108,7 @@
     awp: 'AWP',
     kills: 'kills',
     deaths: 'deaths',
+    spots: 'spots',
   }
 
   const BUYS: Record<string, string> = {
@@ -158,6 +159,7 @@
 
   const SECTIONS: { id: string; title: string; hint: string; kinds: string[] }[] = [
     { id: 'overview', title: 'Overview', hint: 'The summary card and the whole team on each side.', kinds: ['summary', 'team'] },
+    { id: 'spots', title: 'Spots', hint: 'Where each player usually stands and looks, 15 s into CT rounds and 20 s into T rounds.', kinds: ['spots'] },
     { id: 'situations', title: 'Situations', hint: 'Where they stand in the first 10 seconds of each round type, per side and buy.', kinds: ['situation'] },
     { id: 't', title: 'T side', hint: 'How they get onto each site, with the utility, and how they play after the plant.', kinds: ['executes', 'postplant'] },
     { id: 'ct', title: 'CT side', hint: 'Where they come from to retake each site.', kinds: ['retake'] },

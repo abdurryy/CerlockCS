@@ -1,4 +1,5 @@
 <script module lang="ts">
+  import { copyText } from '../lib/clipboard'
   import { mapLabel } from '../lib/format'
   import type { MapScout, RoleCard, Situation } from '../lib/scout/types'
   import { basis, count } from './ScoutRoles.svelte'
@@ -97,30 +98,6 @@
     if (!c) return { situation, side, name: '', color: '', rest: after }
     return { situation, side, name: c.name, color: c.color, rest: after.slice(c.name.length) }
   }
-
-  async function writeClipboard(text: string): Promise<boolean> {
-    try {
-      await navigator.clipboard.writeText(text)
-      return true
-    } catch {
-      // Older webviews without the clipboard API.
-      const ta = document.createElement('textarea')
-      ta.value = text
-      ta.setAttribute('readonly', '')
-      ta.style.position = 'fixed'
-      ta.style.opacity = '0'
-      document.body.appendChild(ta)
-      ta.select()
-      let ok = false
-      try {
-        ok = document.execCommand('copy')
-      } catch {
-        ok = false
-      }
-      ta.remove()
-      return ok
-    }
-  }
 </script>
 
 <script lang="ts">
@@ -140,7 +117,7 @@
   let timer: ReturnType<typeof setTimeout> | undefined
 
   async function copy() {
-    const ok = await writeClipboard(discordText(scout, teamName))
+    const ok = await copyText(discordText(scout, teamName))
     copied = ok ? 'ok' : 'fail'
     clearTimeout(timer)
     timer = setTimeout(() => (copied = ''), 2200)

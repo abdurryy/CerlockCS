@@ -88,6 +88,8 @@ export interface Hit {
   to?: Vec3
   shape: Shape
   color: string
+  // Yaw in degrees for a view cone.
+  look?: number
 }
 
 export type LegendItem = { label: string } & ({ shape: Shape; color: string } | { nade: number } | { c4: true } | { line: string })
@@ -679,7 +681,7 @@ interface Layout {
   marks: Mark[]
   clusters: Cluster[]
   plants: Cluster[]
-  hits: { x: number; y: number; tx: number; ty: number; to: boolean; on: boolean; shape: Shape; color: string }[]
+  hits: { x: number; y: number; tx: number; ty: number; to: boolean; on: boolean; shape: Shape; color: string; look?: number }[]
   R: number
   P: number
 }
@@ -717,6 +719,7 @@ function layoutMarks(c: Card, info: MapInfo, v: View, u: number): Layout {
       on: on(h.at),
       shape: h.shape,
       color: h.color,
+      look: h.look,
     })),
     R,
     P: 10 * u,
@@ -773,6 +776,22 @@ function drawHits(ctx: CanvasRenderingContext2D, l: Layout, u: number) {
     ctx.moveTo(h.x, h.y)
     ctx.lineTo(h.tx, h.ty)
     ctx.stroke()
+  }
+  // View cones under the marks. Image y runs down, so the angle flips.
+  for (const h of l.hits) {
+    if (h.look === undefined || !h.on) continue
+    const a = (-h.look * Math.PI) / 180
+    const len = 52 * u
+    const g = ctx.createRadialGradient(h.x, h.y, 4 * u, h.x, h.y, len)
+    g.addColorStop(0, h.color)
+    g.addColorStop(1, 'rgba(0,0,0,0)')
+    ctx.globalAlpha = 0.55
+    ctx.fillStyle = g
+    ctx.beginPath()
+    ctx.moveTo(h.x, h.y)
+    ctx.arc(h.x, h.y, len, a - 0.42, a + 0.42)
+    ctx.closePath()
+    ctx.fill()
   }
   for (const h of l.hits) {
     ctx.globalAlpha = h.on ? 1 : 0.35

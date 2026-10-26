@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { datesLine, setupText, slug } from './render'
+import { datesLine, setupText } from './render'
+import { slug } from './slug'
 
 describe('slug', () => {
   it('makes plain ascii file names', () => {

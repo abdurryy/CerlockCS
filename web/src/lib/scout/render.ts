@@ -26,6 +26,8 @@ import {
   type Stat,
   type Summary,
 } from './poster'
+import { slug } from './slug'
+import { findSpots } from './spots'
 import type { HeatGrid, KillMark, MapScout, PlaceShare, SideHeat, UtilityMark, Vec3 } from './types'
 
 // The kinds of images, in the order they come out.
@@ -40,6 +42,7 @@ export type ScoutKind =
   | 'pistol'
   | 'eco'
   | 'situation'
+  | 'spots'
   | 'awp'
   | 'deaths'
   | 'kills'
@@ -49,7 +52,7 @@ export type ScoutKind =
   | 'player-deaths'
 
 export const SCOUT_KINDS: ScoutKind[] = [
-  'summary', 'team', 'executes', 'postplant', 'retake', 'utility', 'openings', 'pistol', 'eco', 'situation', 'awp', 'deaths', 'kills',
+  'summary', 'team', 'executes', 'postplant', 'retake', 'utility', 'openings', 'pistol', 'eco', 'situation', 'spots', 'awp', 'deaths', 'kills',
   'player-early', 'player', 'player-kills', 'player-deaths',
 ]
 
@@ -88,28 +91,6 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const LINE_COLOR = '#c9d1d9'
 // From this many grenades a side also gets split utility images.
 const BUSY_UTILITY = 30
-
-// Cyrillic letters spelled out, so Russian and Ukrainian names still give
-// readable file names.
-const CYRILLIC: Record<string, string> = {
-  а: 'a', б: 'b', в: 'v', г: 'g', ґ: 'g', д: 'd', е: 'e', ё: 'e', є: 'ye', ж: 'zh', з: 'z', и: 'i', і: 'i', ї: 'yi', й: 'y',
-  к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch',
-  ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
-}
-
-// slug makes a plain ascii file name part.
-export function slug(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[Ѐ-ӿ]/g, (c) => CYRILLIC[c] ?? '')
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40)
-    .replace(/-+$/, '')
-}
 
 function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? '' : 's'}`
@@ -561,6 +542,34 @@ function planCards(cx: Ctx, want: Set<ScoutKind>): Planned[] {
       )
     }),
   )
+
+  // Where each player usually stands and looks, one image per side.
+  add('spots', () => {
+    const spots = findSpots(scout, scoutLabels(scout), so.trackStep)
+    return ([3, 2] as const).flatMap((side) => {
+      const key = side === 3 ? 'ct' : 't'
+      const list = spots.filter((s) => s.side === key)
+      if (!list.length) return []
+      const top = [...list].sort((a, b) => b.rounds / b.of - a.rounds / a.of || b.rounds - a.rounds).slice(0, 3)
+      const seen = new Set<string>()
+      const legend = list.filter((s) => !seen.has(s.steamId) && seen.add(s.steamId)).map((s) => ({ shape: 'dot' as const, color: s.color, label: s.name }))
+      return markCards(
+        info,
+        draft({
+          name: `${short}-${key}-spots`,
+          kindOf: 'spots',
+          ...heading(cx, side === 3 ? 'Where they hold' : 'Where they stand'),
+          side,
+          bits: [`${list[0].at}s after freeze time`, plural(side === 3 ? scout.ctRounds : scout.tRounds, 'round'), matches],
+          hits: list.map((s) => ({ at: [s.x, s.y, s.z] as Vec3, shape: 'dot' as const, color: s.color, look: s.yaw })),
+          footer: [{ label: 'Most used spots', stats: top.map((s) => ({ value: `${s.rounds}/${s.of}`, label: s.place ? `${s.name}, ${s.place}` : s.name })) }],
+          legend,
+        }),
+        list.map((s) => [s.x, s.y, s.z] as Vec3),
+        false,
+      )
+    })
+  })
 
   const awpCards = (h: SideHeat, side: 2 | 3) => {
     const key = side === 3 ? 'ct' : 't'

@@ -19,6 +19,7 @@
   import ScoutIcon from './ScoutIcon.svelte'
   import ScoutRoles from './ScoutRoles.svelte'
   import ScoutSituations from './ScoutSituations.svelte'
+  import ScoutSpots from './ScoutSpots.svelte'
   import ScoutTendencies from './ScoutTendencies.svelte'
   import SituationPlayer from './SituationPlayer.svelte'
 
@@ -128,6 +129,7 @@
     <ScoutTendencies scout={m} {teamName} onwatch={watch} />
     <ScoutSituations scout={m} onwatch={watch} />
     <ScoutRoles scout={m} />
+    <ScoutSpots scout={m} {teamName} />
     <h3 class="more">Setups and site hits</h3>
   {/if}
 
