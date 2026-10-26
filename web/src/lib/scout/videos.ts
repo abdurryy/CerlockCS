@@ -29,6 +29,9 @@ export const VIDEO_LENGTHS = [
 
 export const FPS = 30
 
+// Every video stays under 20 MB, long ones get a lower bitrate.
+export const MAX_VIDEO_BYTES = 20_000_000
+
 const BUY_FILE: Record<BuyKind, string> = {
   pistol: 'pistol-rounds',
   eco: 'eco-rounds',
@@ -82,5 +85,6 @@ export async function renderVideo(
     draw: (c, at) => o.draw(c, at, view),
     onprogress,
     signal,
+    maxBytes: MAX_VIDEO_BYTES,
   })
 }

@@ -17,6 +17,10 @@ export interface VideoJob {
   // Share done, 0 to 1.
   onprogress?: (done: number) => void
   signal?: AbortSignal
+  // The file must not be bigger than this many bytes. The bitrate comes
+  // from it, and a file that still comes out bigger is made again with
+  // less.
+  maxBytes?: number
 }
 
 export interface Video {
@@ -38,9 +42,16 @@ const FORMATS: Format[] = [
   { codec: 'vp8', container: 'webm' },
 ]
 
-// A keyframe every 2 seconds keeps scrubbing in players fast.
-const KEY_EVERY = 2
+// A keyframe every 5 seconds keeps scrubbing quick without a long video
+// spending its size on keyframes.
+const KEY_EVERY = 5
 const QUEUE = 6
+// Room for the container and for the encoder going a bit over its target.
+const SIZE_MARGIN = 0.85
+// Below this the map gets blurry.
+const MIN_BITRATE = 250e3
+// Tries at a lower bitrate when a file comes out too big.
+const RETRIES = 2
 
 // pause gives the page a moment between frames. Timers are slowed to
 // once a second in a hidden or minimised window, message events are not,
@@ -77,15 +88,28 @@ export class Cancelled extends Error {
 }
 
 export function bitrate(w: number, h: number, fps: number): number {
-  // The map is mostly still, so this keeps text sharp and a 30 second
-  // 1080p clip under 10 MB for Discord.
+  // The map is mostly still, so this keeps text sharp.
   return Math.round(Math.min(8e6, Math.max(1.5e6, w * h * fps * 0.04)))
 }
 
-async function pick(w: number, h: number, fps: number): Promise<{ format: Format; config: VideoEncoderConfig } | null> {
+// targetBitrate is the normal bitrate, lowered so a video of this length
+// fits in maxBytes.
+export function targetBitrate(w: number, h: number, fps: number, seconds: number, maxBytes?: number): number {
+  const normal = bitrate(w, h, fps)
+  if (!maxBytes || seconds <= 0) return normal
+  return Math.round(Math.max(MIN_BITRATE, Math.min(normal, (maxBytes * 8 * SIZE_MARGIN) / seconds)))
+}
+
+// smallerBitrate is the bitrate for another try after a file of size
+// bytes came out over maxBytes.
+export function smallerBitrate(rate: number, size: number, maxBytes: number): number {
+  return Math.max(MIN_BITRATE, Math.round(rate * (maxBytes / size) * SIZE_MARGIN))
+}
+
+async function pick(w: number, h: number, fps: number, rate: number): Promise<{ format: Format; config: VideoEncoderConfig } | null> {
   if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') return null
   for (const format of FORMATS) {
-    const config: VideoEncoderConfig = { codec: format.codec, width: w, height: h, bitrate: bitrate(w, h, fps), framerate: fps }
+    const config: VideoEncoderConfig = { codec: format.codec, width: w, height: h, bitrate: rate, framerate: fps }
     if (format.container === 'mp4') config.avc = { format: 'avc' }
     try {
       const res = await VideoEncoder.isConfigSupported(config)
@@ -105,10 +129,23 @@ export async function encodeVideo(job: VideoJob): Promise<Video> {
   const canvas = document.createElement('canvas')
   canvas.width = w
   canvas.height = h
-  const chosen = await pick(w, h, job.fps)
-  if (!chosen) return record(canvas, job)
+  let rate = targetBitrate(w, h, job.fps, job.duration, job.maxBytes)
+  const chosen = await pick(w, h, job.fps, rate)
+  if (!chosen) return record(canvas, job, rate)
+  try {
+    for (let n = 0; ; n++) {
+      const v = await encodeOnce(job, canvas, chosen.format, { ...chosen.config, bitrate: rate })
+      if (!job.maxBytes || v.blob.size <= job.maxBytes || n >= RETRIES || rate <= MIN_BITRATE) return v
+      rate = smallerBitrate(rate, v.blob.size, job.maxBytes)
+    }
+  } finally {
+    canvas.width = canvas.height = 0
+  }
+}
 
-  const { format, config } = chosen
+async function encodeOnce(job: VideoJob, canvas: HTMLCanvasElement, format: Format, config: VideoEncoderConfig): Promise<Video> {
+  const w = canvas.width
+  const h = canvas.height
   const frames = Math.max(1, Math.round(job.duration * job.fps) + 1)
   const mp4 = format.container === 'mp4' ? new Mp4Muxer({ target: new Mp4Target(), video: { codec: 'avc', width: w, height: h, frameRate: job.fps }, fastStart: 'in-memory' }) : null
   const webm =
@@ -146,7 +183,6 @@ export async function encodeVideo(job: VideoJob): Promise<Video> {
     if (failed) throw failed
   } finally {
     if (encoder.state !== 'closed') encoder.close()
-    canvas.width = canvas.height = 0
   }
   job.onprogress?.(1)
   if (mp4) {
@@ -159,13 +195,13 @@ export async function encodeVideo(job: VideoJob): Promise<Video> {
 
 // record is the fallback: play the frames in real time and record the
 // canvas.
-async function record(canvas: HTMLCanvasElement, job: VideoJob): Promise<Video> {
+async function record(canvas: HTMLCanvasElement, job: VideoJob, rate: number): Promise<Video> {
   if (typeof MediaRecorder === 'undefined' || !canvas.captureStream) throw new Error('This browser cannot make videos')
   const types = ['video/mp4;codecs=avc1', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
   const type = types.find((t) => MediaRecorder.isTypeSupported(t)) ?? ''
   job.draw(canvas, 0)
   const stream = canvas.captureStream(job.fps)
-  const rec = new MediaRecorder(stream, { mimeType: type || undefined, videoBitsPerSecond: bitrate(canvas.width, canvas.height, job.fps) })
+  const rec = new MediaRecorder(stream, { mimeType: type || undefined, videoBitsPerSecond: rate })
   const parts: Blob[] = []
   rec.ondataavailable = (e) => {
     if (e.data.size) parts.push(e.data)

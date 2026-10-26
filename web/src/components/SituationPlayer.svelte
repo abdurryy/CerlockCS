@@ -4,7 +4,7 @@
   import { clockText, hitMarks, Overlay, type FloorMode, type OverlayOptions } from '../lib/scout/overlay'
   import type { MapScout, Situation, SituationTrack } from '../lib/scout/types'
   import { Cancelled } from '../lib/scout/video'
-  import { FPS, lengthSeconds, renderVideo, sizeOf, VIDEO_LENGTHS, VIDEO_SIZES, videoLength } from '../lib/scout/videos'
+  import { FPS, lengthSeconds, MAX_VIDEO_BYTES, renderVideo, sizeOf, VIDEO_LENGTHS, VIDEO_SIZES, videoLength } from '../lib/scout/videos'
   import { downloadBlob } from '../lib/zip'
   import Icon from './Icon.svelte'
   import { fileName } from './ScoutGallery.svelte'
@@ -328,7 +328,7 @@
             {:else if saved}
               <span class="faint">Saved {saved}</span>
             {:else}
-              <span class="faint">{clockText(videoSecs)} at {FPS} fps, as shown here</span>
+              <span class="faint">{clockText(videoSecs)} at {FPS} fps, under {MAX_VIDEO_BYTES / 1e6} MB, as shown here</span>
             {/if}
           </span>
         </div>

@@ -4,8 +4,8 @@
   import { scoutOptions } from '../lib/scout/aggregate'
   import { clockText, lengthOf, Overlay } from '../lib/scout/overlay'
   import type { MapScout, Situation } from '../lib/scout/types'
-  import { bitrate, Cancelled } from '../lib/scout/video'
-  import { FPS, lengthSeconds, renderVideo, sizeOf, teamFolder, VIDEO_LENGTHS, VIDEO_SIZES, videoPath } from '../lib/scout/videos'
+  import { Cancelled, targetBitrate } from '../lib/scout/video'
+  import { FPS, lengthSeconds, MAX_VIDEO_BYTES, renderVideo, sizeOf, teamFolder, VIDEO_LENGTHS, VIDEO_SIZES, videoPath } from '../lib/scout/videos'
   import Icon from './Icon.svelte'
   import ScoutIcon from './ScoutIcon.svelte'
 
@@ -57,7 +57,11 @@
   const chosen = $derived(items.filter((i) => !skip[i.scout.map]))
   const totalSecs = $derived(chosen.reduce((n, i) => n + i.secs, 0))
   // The encoder stays a bit under its target on a mostly still map.
-  const totalMb = $derived(Math.max(1, Math.round((bitrate(sizeOf(size).w, sizeOf(size).h, FPS) / 8 / 1e6) * totalSecs * 0.85)))
+  const totalMb = $derived.by(() => {
+    const { w, h } = sizeOf(size)
+    const bytes = chosen.reduce((n, i) => n + (targetBitrate(w, h, FPS, i.secs, MAX_VIDEO_BYTES) / 8) * i.secs * 0.85, 0)
+    return Math.max(1, Math.round(bytes / 1e6))
+  })
   const savedCount = $derived(Object.values(done).filter((d) => d.stage === 'saved').length)
   const failedCount = $derived(Object.values(done).filter((d) => d.stage === 'failed').length)
   const doneCount = $derived(savedCount + failedCount)
@@ -244,7 +248,7 @@
         {:else if finished}
           <span class:good={!failedCount}>Saved {savedCount} {savedCount === 1 ? 'video' : 'videos'}{failedCount ? `, ${failedCount} failed` : ''}.</span>
         {:else}
-          <span class="faint">{clockText(totalSecs)} of video, about {totalMb} MB. Making them takes about as long as they last, often less.</span>
+          <span class="faint">{clockText(totalSecs)} of video, about {totalMb} MB, each one under {MAX_VIDEO_BYTES / 1e6} MB. Making them takes about as long as they last, often less.</span>
         {/if}
         {#if where}<span class="faint path" title={where}>Saves to {where}</span>{/if}
         {#if error}<span class="err" role="alert">{error}</span>{/if}
