@@ -16,6 +16,10 @@ func TestOutsideLink(t *testing.T) {
 	}{
 		{"https://www.faceit.com/en/players/someone", "https://www.faceit.com/en/players/someone", true},
 		{"https://faceit.com/", "https://faceit.com/", true},
+		{"https://ollama.com/download", "https://ollama.com/download", true},
+		{"https://console.groq.com/keys", "https://console.groq.com/keys", true},
+		{"https://openrouter.ai/keys", "https://openrouter.ai/keys", true},
+		{"https://groq.com.evil.example/", "", false},
 		{"https://developers.faceit.com/docs", "https://developers.faceit.com/docs", true},
 		{"https://FACEIT.com/en", "https://FACEIT.com/en", true},
 		{"https://github.com/abdurryy/CerlockCS?tab=readme#download", "https://github.com/abdurryy/CerlockCS?tab=readme#download", true},

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/abdurryy/CerlockCS/internal/ai"
 	"github.com/abdurryy/CerlockCS/internal/faceit"
 	"github.com/abdurryy/CerlockCS/internal/icons"
 	"github.com/abdurryy/CerlockCS/internal/maps"
@@ -47,6 +48,9 @@ type Config struct {
 	// ExportDir is where scouting videos are saved, empty means the
 	// exports folder in DataDir.
 	ExportDir string
+	// AIAPI replaces the address of the model that writes the game plan,
+	// tests point it at a fake.
+	AIAPI string
 }
 
 type Server struct {
@@ -56,6 +60,7 @@ type Server struct {
 	icons    *icons.Store
 	settings *settingsStore
 	faceit   *faceit.Client
+	ai       *ai.Client
 	dl       *downloader
 }
 
@@ -80,6 +85,7 @@ func New(cfg Config) (*Server, error) {
 	s := &Server{cfg: cfg, lib: lib, maps: ms, icons: is}
 	s.settings = openSettings(filepath.Join(cfg.DataDir, "settings.json"))
 	s.faceit = faceit.New(cfg.FaceitAPI, cfg.FaceitDownloadAPI, s.faceitKey)
+	s.ai = ai.New()
 	s.dl = newDownloader(filepath.Join(cfg.DataDir, "demos", "faceit"), lib, s.faceit, cfg.MaxUpload)
 	return s, nil
 }
@@ -107,6 +113,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/exports", s.exportInfo)
 	mux.HandleFunc("PUT /api/exports/file", s.saveExport)
 	mux.HandleFunc("POST /api/exports/open", s.openExport)
+	mux.HandleFunc("POST /api/ai/write", s.aiWrite)
+	mux.HandleFunc("GET /api/ai/models", s.aiModels)
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	})

@@ -40,6 +40,8 @@ func outsideLink(raw string) (string, bool) {
 	switch {
 	case host == "faceit.com", strings.HasSuffix(host, ".faceit.com"):
 	case host == "github.com", host == "developer.microsoft.com":
+	// Where to get a model for writing the game plan.
+	case host == "ollama.com", host == "console.groq.com", host == "openrouter.ai":
 	default:
 		return "", false
 	}
