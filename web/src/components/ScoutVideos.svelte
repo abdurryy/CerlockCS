@@ -1,12 +1,16 @@
 <script lang="ts">
   import { exportFolder, openExport, saveExport } from '../lib/api'
   import { mapLabel } from '../lib/format'
+  import { indexHtml, type SavedVideo } from '../lib/scout/indexpage'
   import { scoutOptions } from '../lib/scout/aggregate'
   import { clockText, lengthOf, Overlay } from '../lib/scout/overlay'
   import type { MapScout, Situation } from '../lib/scout/types'
   import { Cancelled, targetBitrate } from '../lib/scout/video'
   import {
+    COVER_NOTES,
+    COVER_PLAIN,
     DEFAULT_SPEED,
+    fightsOf,
     FPS,
     lengthSeconds,
     MAX_VIDEO_BYTES,
@@ -64,6 +68,7 @@
   let dir = $state('')
   let collapsed = $state(false)
   let error = $state('')
+  let page = $state('')
   let abort: AbortController | null = null
   let dialog: HTMLDivElement | undefined = $state()
 
@@ -80,12 +85,12 @@
             // One after another, split so no video runs over five minutes.
             const lens = s.tracks.map((tr, i) => {
               const full = lengthOf([tr], max)
-              return { round: i, length: cut > 0 ? Math.min(cut, full) : full }
+              return { round: i, length: cut > 0 ? Math.min(cut, full) : full, fights: fightsOf(tr) }
             })
             const groups = storyPages(lens, speed)
             return groups.map((g, n) => {
               const pg = g.map((r) => r.round)
-              return { key: `${m.map}/${s.key}/${n}`, scout: m, s, layout: lay, rounds: pg, part: part(pg, groups.length > 1), secs: storyPlan(g, speed).total }
+              return { key: `${m.map}/${s.key}/${n}`, scout: m, s, layout: lay, rounds: pg, part: part(pg, groups.length > 1), secs: storyPlan(g, speed, s.notes.length ? COVER_NOTES : COVER_PLAIN).total }
             })
           }
           const parts = pages(
@@ -196,6 +201,22 @@
       }
       secsDone += it.secs
     }
+    // A page next to the videos with all of them, by map and side.
+    const saved: SavedVideo[] = list.flatMap((it) => {
+      const d = done[it.key]
+      if (d?.stage !== 'saved' || !d.path) return []
+      return [{ map: it.scout.map, situation: it.s, path: d.path.slice(folder.length + 1), part: it.part }]
+    })
+    if (saved.length) {
+      try {
+        const html = indexHtml(teamName, scouts, saved)
+        const at = `${folder}/index.html`
+        await saveExport(at, new Blob([html], { type: 'text/html' }))
+        page = at
+      } catch (e) {
+        error = (e as Error).message || 'Could not save the video page'
+      }
+    }
     running = false
     finished = !signal.aborted
     current = ''
@@ -207,11 +228,11 @@
     abort?.abort()
   }
 
-  async function open() {
+  async function open(what = folder) {
     try {
-      await openExport(folder)
+      await openExport(what)
     } catch (e) {
-      error = (e as Error).message || 'Could not open the folder'
+      error = (e as Error).message || 'Could not open it'
     }
   }
 
@@ -304,7 +325,10 @@
           <button class="btn" onclick={cancel}>Cancel</button>
         {:else}
           {#if finished || savedCount}
-            <button class="btn" onclick={open}><ScoutIcon name="external" size={14} /><span>Open folder</span></button>
+            {#if page}
+              <button class="btn" title="A page with every video, by map and side" onclick={() => open(page)}><ScoutIcon name="play" size={13} /><span>Open video page</span></button>
+            {/if}
+            <button class="btn" onclick={() => open()}><ScoutIcon name="external" size={14} /><span>Open folder</span></button>
           {/if}
           <button class="primary" disabled={!chosen.length} onclick={start}>
             <ScoutIcon name="download" size={15} />

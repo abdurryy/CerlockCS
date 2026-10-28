@@ -22,11 +22,13 @@ import (
 // exportPart is one folder or file name: lower case, digits, - and _.
 var exportPart = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
-// exportTypes are the files that can be saved, with their extension.
+// exportTypes are the files that can be saved, with their extension. The
+// HTML page lists the videos.
 var exportTypes = map[string]string{
 	"video/mp4":  ".mp4",
 	"video/webm": ".webm",
 	"image/png":  ".png",
+	"text/html":  ".html",
 }
 
 const maxExport = 2 << 30
@@ -87,8 +89,8 @@ func (s *Server) exportInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"dir": s.exportDir()})
 }
 
-// saveExport writes the request body to the path in ?path=. Only video
-// and PNG bodies are taken: a form on another site cannot send those
+// saveExport writes the request body to the path in ?path=. Only video,
+// PNG and HTML bodies are taken: a form on another site cannot send those
 // types, and a script there would need a CORS answer it never gets.
 func (s *Server) saveExport(w http.ResponseWriter, r *http.Request) {
 	if !sameSite(r) {
@@ -98,7 +100,7 @@ func (s *Server) saveExport(w http.ResponseWriter, r *http.Request) {
 	mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	ext, ok := exportTypes[mt]
 	if !ok {
-		writeError(w, http.StatusUnsupportedMediaType, errors.New("only mp4, webm and png files can be saved"))
+		writeError(w, http.StatusUnsupportedMediaType, errors.New("only mp4, webm, png and html files can be saved"))
 		return
 	}
 	rel := r.URL.Query().Get("path")
@@ -132,7 +134,8 @@ func (s *Server) saveExport(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"path": dst, "size": n})
 }
 
-// openExport shows an export folder, the top one when path is empty.
+// openExport shows an export folder, the top one when path is empty, or
+// opens a saved HTML page in the browser.
 func (s *Server) openExport(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Path string `json:"path"`
@@ -142,6 +145,23 @@ func (s *Server) openExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !readJSON(w, r, &body) {
+		return
+	}
+	if path.Ext(body.Path) == ".html" {
+		file, ok := exportPath(s.exportDir(), body.Path, true)
+		if !ok {
+			writeError(w, http.StatusBadRequest, errors.New("bad file name"))
+			return
+		}
+		if st, err := os.Stat(file); err != nil || st.IsDir() {
+			writeError(w, http.StatusNotFound, errors.New("that page is not there"))
+			return
+		}
+		if err := openFolder(file); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	dir, ok := exportPath(s.exportDir(), body.Path, false)

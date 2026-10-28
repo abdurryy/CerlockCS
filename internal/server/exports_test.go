@@ -40,6 +40,7 @@ func TestSaveExportRefusesBadRequests(t *testing.T) {
 		{"extension does not match", "team/clip.exe", "video/mp4", "", 400},
 		{"png named mp4", "team/clip.mp4", "image/png", "", 400},
 		{"form post type", "team/clip.mp4", "text/plain", "", 415},
+		{"html named mp4", "team/clip.mp4", "text/html", "", 400},
 		{"other site", "team/clip.mp4", "video/mp4", "https://evil.example", 403},
 	}
 	for _, c := range cases {
@@ -76,6 +77,34 @@ func TestOpenExportOnlyOpensExportFolders(t *testing.T) {
 		t.Fatalf("status %d for another site", rec.Code)
 	}
 	if len(opened) != 1 || opened[0] != filepath.Join(s.exportDir(), "e-maniacs") {
+		t.Fatalf("opened %v", opened)
+	}
+}
+
+func TestOpenExportOpensTheVideoPage(t *testing.T) {
+	_, h := newTestServer(t)
+	var opened []string
+	old := openFolder
+	openFolder = func(p string) error {
+		opened = append(opened, p)
+		return nil
+	}
+	defer func() { openFolder = old }()
+
+	// Not saved yet.
+	if rec := send(h, "POST", "/api/exports/open", `{"path":"e-maniacs/index.html"}`, "Content-Type", "application/json"); rec.Code != 404 {
+		t.Fatalf("status %d before the page exists", rec.Code)
+	}
+	if rec := send(h, "PUT", "/api/exports/file?path=e-maniacs/index.html", "<!doctype html>", "Content-Type", "text/html; charset=utf-8"); rec.Code != 200 {
+		t.Fatalf("save status %d: %s", rec.Code, rec.Body.String())
+	}
+	if rec := send(h, "POST", "/api/exports/open", `{"path":"e-maniacs/index.html"}`, "Content-Type", "application/json"); rec.Code != 204 {
+		t.Fatalf("open status %d: %s", rec.Code, rec.Body.String())
+	}
+	if rec := send(h, "POST", "/api/exports/open", `{"path":"../index.html"}`, "Content-Type", "application/json"); rec.Code != 400 {
+		t.Fatalf("status %d for a page outside", rec.Code)
+	}
+	if len(opened) != 1 || filepath.Base(opened[0]) != "index.html" {
 		t.Fatalf("opened %v", opened)
 	}
 }
