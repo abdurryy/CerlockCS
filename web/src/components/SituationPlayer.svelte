@@ -36,7 +36,14 @@
   // Plays the rounds of one situation, one after another or all at once,
   // from freeze time to the end of the round, and saves it as a video or a
   // still.
-  let { scout, situation, teamName = '', onclose }: { scout: MapScout; situation: Situation; teamName?: string; onclose?: () => void } = $props()
+  // start picks some rounds when it opens, all when empty.
+  let {
+    scout,
+    situation,
+    start = [],
+    teamName = '',
+    onclose,
+  }: { scout: MapScout; situation: Situation; start?: number[]; teamName?: string; onclose?: () => void } = $props()
 
   const SPEEDS = [0.5, 1, 2, 4]
 
@@ -46,7 +53,7 @@
   let playing = $state(false)
   let speed = $state(1)
   // svelte-ignore state_referenced_locally
-  let picked = $state<boolean[]>(situation.tracks.map(() => true))
+  let picked = $state<boolean[]>(situation.tracks.map((_, i) => !start.length || start.includes(i)))
   let highlight = $state<string | null>(null)
   let floors = $state<FloorMode>('auto')
   let layout = $state<VideoLayout>('story')

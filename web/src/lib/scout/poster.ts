@@ -4,7 +4,7 @@
 // out on a 1600 px grid and scaled to the size asked for.
 
 import logoUrl from '../../assets/brand/lockup-dark.svg?url'
-import { ACCENT, BAD, BG, GOOD, TEXT, TEXT_2, teamColor } from '../colors'
+import { ACCENT, BAD, BG, EVIDENCE, GOOD, TEXT, TEXT_2, teamColor } from '../colors'
 import { drawIcon, iconBitmap, icons, onIconLoad } from '../icons.svelte'
 import { DISPLAY, FONT, circle, roundRect, setSpacing } from '../render/draw'
 import { PLATE_PAD, makePlate } from '../render/plate'
@@ -1378,6 +1378,190 @@ export function composeSummary(s: Summary, cx: Context, S: number, logoImg: HTML
   const ph = S - RULE * u - 36 * u - poolH - y
   drawPlayers(ctx, s.players, x, y, w, ph, u)
   if (s.pool.length) drawPool(ctx, s.pool, x, S - RULE * u - 46 * u, w, u)
+  drawFooterLine(ctx, cx, S, u)
+  return out
+}
+
+// ---- Game plan ----
+
+export interface PlanItem {
+  do: string
+  why: string
+  strength: 'strong' | 'likely' | 'weak'
+  score: number
+}
+
+export interface PlanColumn {
+  label: string
+  // 2 = T, 3 = CT, the side you play.
+  side: number
+  sub: string
+  parts: { title: string; lines: PlanItem[] }[]
+}
+
+export interface PlanCard {
+  name: string
+  title: string
+  kicker: string
+  bits: string[]
+  columns: PlanColumn[]
+}
+
+const STRENGTH_COLOR: Record<PlanItem['strength'], string> = { strong: GOOD, likely: EVIDENCE, weak: TEXT_3 }
+const STRENGTH_LABEL: Record<PlanItem['strength'], string> = { strong: 'Seen a lot', likely: 'Likely', weak: 'Few rounds' }
+
+// wrapText breaks text into at most max lines of width w, the last one
+// cut with an ellipsis.
+function wrapText(ctx: CanvasRenderingContext2D, text: string, w: number, max: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean)
+  const out: string[] = []
+  let cur = ''
+  for (let i = 0; i < words.length; i++) {
+    const next = cur ? `${cur} ${words[i]}` : words[i]
+    if (ctx.measureText(next).width <= w || !cur) {
+      cur = next
+      continue
+    }
+    out.push(cur)
+    cur = words[i]
+    if (out.length === max) {
+      out[max - 1] = fitText(ctx, `${out[max - 1]} ${words.slice(i).join(' ')}`, w)
+      return out
+    }
+  }
+  if (cur) out.push(cur)
+  return out
+}
+
+interface PlanRow {
+  head?: string
+  item?: PlanItem
+  doLines: string[]
+  whyLines: string[]
+  h: number
+  part: number
+}
+
+const PART_H = 40
+const DO_LINE = 29
+const WHY_LINE = 24
+const ROW_GAP = 18
+
+function planRows(ctx: CanvasRenderingContext2D, col: PlanColumn, w: number, u: number): PlanRow[] {
+  const rows: PlanRow[] = []
+  col.parts.forEach((p, k) => {
+    if (!p.lines.length) return
+    rows.push({ head: p.title, doLines: [], whyLines: [], h: PART_H * u, part: k })
+    for (const item of p.lines) {
+      font(ctx, 700, 23, u)
+      const doLines = wrapText(ctx, item.do, w, 2)
+      font(ctx, 500, 17, u, 0, FONT)
+      const whyLines = wrapText(ctx, item.why, w, 2)
+      rows.push({ item, doLines, whyLines, part: k, h: (doLines.length * DO_LINE + whyLines.length * WHY_LINE + ROW_GAP) * u })
+    }
+  })
+  setSpacing(ctx, '0px')
+  return rows
+}
+
+// fitRows drops the least sure lines until the rest fit in h, and part
+// headings left without lines.
+function fitRows(rows: PlanRow[], h: number): PlanRow[] {
+  let list = rows.slice()
+  const total = () => list.reduce((s, r) => s + r.h, 0)
+  const rank = (r: PlanRow) => (r.item!.strength === 'weak' ? 0 : r.item!.strength === 'likely' ? 1 : 2) * 10 + r.item!.score
+  while (list.length && total() > h) {
+    const items = list.filter((r) => r.item)
+    if (!items.length) break
+    const worst = items.reduce((a, b) => (rank(b) < rank(a) ? b : a))
+    list = list.filter((r) => r !== worst)
+    list = list.filter((r, i) => !r.head || list.slice(i + 1).some((x) => x.item && x.part === r.part))
+  }
+  return list
+}
+
+function drawPlanColumn(ctx: CanvasRenderingContext2D, col: PlanColumn, x: number, y: number, w: number, h: number, u: number) {
+  panel(ctx, x, y, w, h, u)
+  const pad = 30 * u
+  const tc = teamColor(col.side)
+  ctx.fillStyle = tc.base
+  ctx.fillRect(x + pad, y, 44 * u, 3 * u)
+  drawIcon(ctx, col.side === 3 ? 'kill/ct' : 'kill/t', x + w - pad - 14 * u, y + 40 * u, 28 * u, null)
+  panelLabel(ctx, col.label, x + pad, y + 46 * u, u)
+  font(ctx, 500, 17, u, 0, FONT)
+  ctx.fillStyle = TEXT_3
+  ctx.fillText(fitText(ctx, col.sub, w - 2 * pad - 40 * u), x + pad, y + 76 * u)
+  const textX = x + pad + 24 * u
+  const textW = x + w - pad - textX
+  const top = y + 108 * u
+  const rows = fitRows(planRows(ctx, col, textW, u), y + h - 20 * u - top)
+  if (!rows.some((r) => r.item)) {
+    font(ctx, 500, 19, u, 0, FONT)
+    ctx.fillStyle = TEXT_3
+    ctx.fillText('Nothing clear yet, more demos will tell.', x + pad, top + 30 * u)
+    return
+  }
+  let ry = top
+  for (const r of rows) {
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'alphabetic'
+    if (r.head) {
+      font(ctx, 600, 15, u, 0.1)
+      ctx.fillStyle = TEXT_2
+      ctx.fillText(fitText(ctx, r.head.toUpperCase(), w - 2 * pad), x + pad, ry + 26 * u)
+      setSpacing(ctx, '0px')
+      ry += r.h
+      continue
+    }
+    const item = r.item!
+    ctx.fillStyle = STRENGTH_COLOR[item.strength]
+    circle(ctx, x + pad + 6 * u, ry + 15 * u, 6 * u)
+    ctx.fill()
+    font(ctx, 700, 23, u)
+    ctx.fillStyle = TEXT
+    r.doLines.forEach((ln, i) => ctx.fillText(ln, textX, ry + 22 * u + i * DO_LINE * u))
+    const wy = ry + r.doLines.length * DO_LINE * u
+    font(ctx, 500, 17, u, 0, FONT)
+    ctx.fillStyle = TEXT_2
+    r.whyLines.forEach((ln, i) => ctx.fillText(ln, textX, wy + 18 * u + i * WHY_LINE * u))
+    ry += r.h
+  }
+}
+
+// composePlan draws the game plan: your T side and your CT side next to
+// each other, the surest lines first when they do not all fit.
+export function composePlan(p: PlanCard, cx: Context, S: number, logoImg: HTMLImageElement | null): HTMLCanvasElement {
+  const out = canvas(S, S)
+  const ctx = out.getContext('2d')!
+  const u = S / BASE
+  drawBackground(ctx, S)
+  drawHeader(ctx, { title: p.title, kicker: p.kicker, side: 0, bits: p.bits }, S, u, logoImg)
+  const x = M * u
+  const w = S - 2 * x
+  const gap = 24 * u
+  const y = 282 * u
+  const legendH = 48 * u
+  const h = S - RULE * u - 30 * u - legendH - y
+  const cw = (w - gap) / 2
+  p.columns.slice(0, 2).forEach((col, i) => drawPlanColumn(ctx, col, x + i * (cw + gap), y, cw, h, u))
+  // What the dots mean.
+  let lx = x
+  const ly = y + h + 34 * u
+  font(ctx, 500, 16, u, 0, FONT)
+  ctx.textBaseline = 'middle'
+  for (const s of ['strong', 'likely', 'weak'] as const) {
+    ctx.fillStyle = STRENGTH_COLOR[s]
+    circle(ctx, lx + 6 * u, ly, 6 * u)
+    ctx.fill()
+    ctx.fillStyle = TEXT_2
+    ctx.fillText(STRENGTH_LABEL[s], lx + 20 * u, ly + 1 * u)
+    lx += 20 * u + ctx.measureText(STRENGTH_LABEL[s]).width + 30 * u
+  }
+  ctx.fillStyle = TEXT_3
+  ctx.textAlign = 'right'
+  ctx.fillText('From their demos, not a promise. Check the rounds behind a line.', x + w, ly + 1 * u)
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
   drawFooterLine(ctx, cx, S, u)
   return out
 }

@@ -64,3 +64,21 @@ describe('indexHtml', () => {
     expect(esc('"x"')).toBe('&quot;x&quot;')
   })
 })
+
+describe('indexHtml game plan', () => {
+  const plan = {
+    map: 'de_mirage',
+    key: [{ kind: 'site', do: 'Hit <B>', why: 'B had 1 player in 5 of 6.', strength: 'strong', score: 1, side: 't', situation: 'ct-eco', rounds: [0] }],
+    t: { side: 't', title: 'Your T side', sub: 'They are CT.', parts: [{ key: 'ct-eco', buy: 'eco', title: 'Their CT eco rounds', rounds: 6, lines: [{ kind: 'site', do: 'Hit <B>', why: 'B had 1 player in 5 of 6.', strength: 'strong', score: 1, side: 't', situation: 'ct-eco', rounds: [0] }] }] },
+    ct: { side: 'ct', title: 'Your CT side', sub: 'They are T.', parts: [] },
+  } as unknown as import('./plan').GamePlan
+  const html = indexHtml('E-ManiacS', [mirage], [{ map: 'de_mirage', situation: eco, path: 'mirage/ct/eco-rounds.mp4' }], [], new Map([['de_mirage', plan]]))
+
+  it('shows the plan with links to the videos behind it', () => {
+    expect(html).toContain('<h3>Game plan</h3>')
+    expect(html).toContain('<span class="tag t">T</span>Hit &lt;B&gt;')
+    expect(html).toContain('<a href="#de_mirage-ct-eco">Watch</a>')
+    expect(html).toContain('id="de_mirage-ct-eco"')
+    expect(html).toContain('Nothing clear yet.')
+  })
+})

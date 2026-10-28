@@ -17,6 +17,7 @@
   import GameIcon from './GameIcon.svelte'
   import ScoutGallery, { groupScout } from './ScoutGallery.svelte'
   import ScoutIcon from './ScoutIcon.svelte'
+  import ScoutPlan from './ScoutPlan.svelte'
   import ScoutRoles from './ScoutRoles.svelte'
   import ScoutSituations from './ScoutSituations.svelte'
   import ScoutSpots from './ScoutSpots.svelte'
@@ -42,10 +43,13 @@
   const drawing = $derived(!set || set.stage === 'waiting' || set.stage === 'drawing' || set.stage === 'saving')
   let sections: HTMLElement[] = $state([])
   let watching = $state.raw<Situation | null>(null)
+  // The rounds to pick when it opens, all when empty.
+  let only = $state.raw<number[]>([])
   let opener: HTMLElement | null = null
 
-  function watch(s: Situation, from: HTMLElement | null) {
+  function watch(s: Situation, from: HTMLElement | null, rounds: number[] = []) {
     opener = from
+    only = rounds
     watching = s
   }
 
@@ -126,6 +130,7 @@
   </div>
 
   {#if m.situations && m.roles}
+    <ScoutPlan scout={m} {teamName} onwatch={watch} />
     <ScoutTendencies scout={m} {teamName} onwatch={watch} />
     <ScoutSituations scout={m} onwatch={watch} />
     <ScoutRoles scout={m} />
@@ -265,7 +270,7 @@
 </section>
 
 {#if watching}
-  <SituationPlayer scout={m} situation={watching} {teamName} onclose={unwatch} />
+  <SituationPlayer scout={m} situation={watching} start={only} {teamName} onclose={unwatch} />
 {/if}
 
 <style>

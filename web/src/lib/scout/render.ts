@@ -13,6 +13,7 @@ import {
   NADE_ICON,
   assets,
   compose,
+  composePlan,
   composeSummary,
   gridOf,
   stageFor,
@@ -21,11 +22,13 @@ import {
   type Group,
   type Hit,
   type LegendItem,
+  type PlanCard,
   type Stage,
   type Row,
   type Stat,
   type Summary,
 } from './poster'
+import { gamePlan } from './plan'
 import { slug } from './slug'
 import { findSpots } from './spots'
 import type { HeatGrid, KillMark, MapScout, PlaceShare, SideHeat, UtilityMark, Vec3 } from './types'
@@ -33,6 +36,7 @@ import type { HeatGrid, KillMark, MapScout, PlaceShare, SideHeat, UtilityMark, V
 // The kinds of images, in the order they come out.
 export type ScoutKind =
   | 'summary'
+  | 'plan'
   | 'team'
   | 'executes'
   | 'postplant'
@@ -52,7 +56,7 @@ export type ScoutKind =
   | 'player-deaths'
 
 export const SCOUT_KINDS: ScoutKind[] = [
-  'summary', 'team', 'executes', 'postplant', 'retake', 'utility', 'openings', 'pistol', 'eco', 'situation', 'spots', 'awp', 'deaths', 'kills',
+  'summary', 'plan', 'team', 'executes', 'postplant', 'retake', 'utility', 'openings', 'pistol', 'eco', 'situation', 'spots', 'awp', 'deaths', 'kills',
   'player-early', 'player', 'player-kills', 'player-deaths',
 ]
 
@@ -774,11 +778,11 @@ function allGrids(scout: MapScout): HeatGrid[] {
   ]
 }
 
-async function draw(planned: Planned[], context: Context, map: string, st: Stage, S: number, opts: MapImageOptions, summary: Summary | null): Promise<ScoutImage[]> {
+async function draw(planned: Planned[], context: Context, map: string, st: Stage, S: number, opts: MapImageOptions, summary: Summary | null, plan: PlanCard | null = null): Promise<ScoutImage[]> {
   const logo = await assets(S)
   const out: ScoutImage[] = []
   const unique = names()
-  const total = planned.length + (summary ? 1 : 0)
+  const total = planned.length + (summary ? 1 : 0) + (plan ? 1 : 0)
   const emit = async (img: ScoutImage) => {
     out.push(img)
     await opts.onImage?.(img, out.length, total)
@@ -788,6 +792,10 @@ async function draw(planned: Planned[], context: Context, map: string, st: Stage
   if (summary) {
     const canvas = composeSummary(summary, context, S, logo)
     await emit({ name: unique(summary.name), title: summary.title, subtitle: summary.bits.filter(Boolean).join(' · '), canvas, kind: 'summary', side: 0 })
+  }
+  if (plan) {
+    const canvas = composePlan(plan, context, S, logo)
+    await emit({ name: unique(plan.name), title: plan.title, subtitle: [map, 'Game plan'].join(' · '), canvas, kind: 'plan', side: 0 })
   }
   for (const { card, kind } of planned) {
     const canvas = compose(card, context, st, S, logo)
@@ -824,7 +832,25 @@ export async function renderMapImages(scout: MapScout, opts: MapImageOptions = {
   const want = new Set<ScoutKind>(opts.kinds?.length ? opts.kinds : SCOUT_KINDS)
   const planned = planCards(cx, want)
   const st = await stageFor(scout.info, scoutLabels(scout) ?? { callouts: [], sites: [] }, allGrids(scout))
-  return draw(planned, contextOf(cx), cx.map, st, S, opts, want.has('summary') ? summaryOf(cx, opts.pool) : null)
+  return draw(planned, contextOf(cx), cx.map, st, S, opts, want.has('summary') ? summaryOf(cx, opts.pool) : null, want.has('plan') ? planOf(cx) : null)
+}
+
+// planOf is the game plan image: what to do on each side against them.
+function planOf(cx: Ctx): PlanCard | null {
+  const plan = gamePlan(cx.scout)
+  const sides = [plan.t, plan.ct]
+  if (!sides.some((s) => s.parts.some((p) => p.lines.length))) return null
+  return {
+    name: `${cx.short}-game-plan`,
+    ...heading(cx, 'Game plan'),
+    bits: [plural(cx.scout.ctRounds + cx.scout.tRounds, 'round'), cx.matches],
+    columns: sides.map((s) => ({
+      label: s.title,
+      side: s.side === 'ct' ? 3 : 2,
+      sub: s.sub,
+      parts: s.parts.map((p) => ({ title: p.title, lines: p.lines })),
+    })),
+  }
 }
 
 // renderMapPngs renders the images of a map one at a time and keeps only

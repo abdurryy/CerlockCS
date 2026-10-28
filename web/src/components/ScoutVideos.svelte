@@ -2,6 +2,7 @@
   import { exportFolder, openExport, saveExport } from '../lib/api'
   import { mapLabel } from '../lib/format'
   import { indexHtml, type SavedSheet, type SavedVideo } from '../lib/scout/indexpage'
+  import { gamePlan } from '../lib/scout/plan'
   import { scoutOptions } from '../lib/scout/aggregate'
   import { clockText, lengthOf, Overlay } from '../lib/scout/overlay'
   import type { MapScout, Situation } from '../lib/scout/types'
@@ -238,7 +239,7 @@
     })
     if (saved.length) {
       try {
-        const html = indexHtml(teamName, scouts, saved, sheets)
+        const html = indexHtml(teamName, scouts, saved, sheets, new Map(scouts.map((m) => [m.map, gamePlan(m)])))
         const at = `${folder}/index.html`
         await saveExport(at, new Blob([html], { type: 'text/html' }))
         page = at
