@@ -6,7 +6,7 @@
 import { SLOT_COLORS } from '../colors'
 import { FLAG, lerpAngle, prettyPlace, type Replay } from '../replay'
 import type { Grenade } from '../types'
-import { EQ } from '../weapons'
+import { EQ, isGun } from '../weapons'
 import type { Binner } from './aggregate'
 import type { BuyKind, HeatGrid, Situation, SituationTrack, TrackEvent, TrackPlayer, Zone } from './types'
 
@@ -579,7 +579,10 @@ export function buildTrack(ctx: RoundCtx, read: RoundRead, replayId: string, opt
     const yaws = new Float32Array(n)
     const alive = new Uint8Array(n)
     const place = new Uint8Array(n)
+    const gun = new Uint16Array(n)
     const base = p * F
+    const hasGun = r.pprimary.length > 0 || r.pweapon.length > 0
+    let lg = 0
     const hasYaw = r.pyaw.length > 0
     const hasPlace = r.pplace.length > 0
     let lp = 0
@@ -623,6 +626,7 @@ export function buildTrack(ctx: RoundCtx, read: RoundRead, replayId: string, opt
           // An empty place keeps the last one, a corner between callouts
           // has none.
           if (hasPlace && r.pplace[j]) lp = r.pplace[j]
+          if (hasGun) lg = (r.pprimary.length ? r.pprimary[j] : 0) || (isGun(r.pweapon[j]) ? r.pweapon[j] : lg)
         } else dead = true
       }
       xs[s] = lx
@@ -631,9 +635,11 @@ export function buildTrack(ctx: RoundCtx, read: RoundRead, replayId: string, opt
       yaws[s] = lyaw
       alive[s] = dead ? 0 : 1
       place[s] = lp
+      gun[s] = lg
     }
     const out: TrackPlayer = { steamId: ctx.ids[k], name: ctx.names[k], color: ctx.colors[k], xs, ys, zs, yaw: yaws, alive }
     if (hasPlace) out.place = place
+    if (hasGun) out.gun = gun
     return out
   })
   const until = Math.min(end, live + opts.trackSeconds * rate)

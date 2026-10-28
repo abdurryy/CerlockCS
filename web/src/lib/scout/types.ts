@@ -192,6 +192,8 @@ export interface TrackPlayer {
   alive: Uint8Array
   // The callout they are at, an index into SituationTrack.places.
   place?: Uint8Array
+  // Their main gun: the primary, else the gun in their hands, 0 for none.
+  gun?: Uint16Array
 }
 
 // TrackEvent is something that happened in a track, t seconds after
