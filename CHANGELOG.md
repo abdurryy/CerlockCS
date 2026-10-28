@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.3.6
+
+More to read off every round, and all videos on one page.
+
+- Names on the map show the callout the player is at, like "ZoRoBeast Outside", straight from the demo
+- The list of what happens reads like the killfeed: killer, weapon, victim and where, with the headshot mark. Smokes and molotovs are in it too
+- Fights play at real speed: round by round videos run at 2x, but slow down for a few seconds around every kill so you can follow it. Watch does the same
+- Every video starts with a short summary: the round type, how many were won and the main patterns
+- Save all videos also writes `index.html` in the team folder: every map with its tendencies and roles and all the videos by side and round type. Open it with the new Open video page button
+- N and P go to the next and previous round in Watch
+
+How to run it:
+
+- Windows: download `cerlock-windows-amd64.exe` and double click it. Windows may warn about an unknown publisher since the exe is not signed, click "More info" and then "Run anyway".
+- Linux and macOS: download the `.tar.gz` for your system, extract it and run `./cerlock`.
+
 ## v0.3.5
 
 One round at a time, so the videos are easy to follow.
