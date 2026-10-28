@@ -3,14 +3,24 @@ import { BUY_ORDER } from './situations'
 import type { MapScout, Situation } from './types'
 
 // indexHtml writes the page saved next to the videos: every map with its
-// tendencies and roles, then every saved video by side and round type.
-// Paths are relative to the page.
+// tendencies and roles, then every saved video and round sheet by side and
+// round type. Paths are relative to the page.
 
 export interface SavedVideo {
   map: string
   situation: Situation
   path: string
   // Which rounds a part of a split situation has, 1 based.
+  part?: { from: number; to: number }
+  // Where each round starts in a round by round video, to jump there.
+  chapters?: { round: number; at: number }[]
+}
+
+// SavedSheet is a round sheet image.
+export interface SavedSheet {
+  map: string
+  situation: Situation
+  path: string
   part?: { from: number; to: number }
 }
 
@@ -29,12 +39,36 @@ function buyName(s: Situation): string {
   return b.charAt(0).toUpperCase() + b.slice(1)
 }
 
-function situationCard(s: Situation, videos: SavedVideo[]): string {
+function clock(sec: number): string {
+  const s = Math.floor(sec)
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+function chapterList(s: Situation, v: SavedVideo): string {
+  if (!v.chapters?.length) return ''
+  const items = v.chapters
+    .map((c) => {
+      const tr = s.tracks[c.round]
+      if (!tr) return ''
+      const hit = tr.hit ? `, ${esc(tr.hit)}` : ''
+      return `<li><button type="button" data-t="${c.at.toFixed(2)}"><span><time>${clock(c.at)}</time>${esc(tr.label)}</span><span class="${tr.won ? 'good' : 'bad'}">${tr.won ? 'Won' : 'Lost'}${hit}</span></button></li>`
+    })
+    .join('')
+  return `<ol class="ch">${items}</ol>`
+}
+
+function situationCard(s: Situation, videos: SavedVideo[], sheets: SavedSheet[]): string {
   const notes = s.notes.slice(0, 2).map((n) => `<li>${esc(n)}</li>`).join('')
   const clips = videos
     .map((v) => {
       const label = v.part ? `<div class="part">Rounds ${v.part.from} to ${v.part.to}</div>` : ''
-      return `${label}<video controls preload="metadata" src="${esc(v.path)}"></video>`
+      return `<div class="clip">${label}<video controls preload="metadata" src="${esc(v.path)}"></video>${chapterList(s, v)}</div>`
+    })
+    .join('')
+  const pics = sheets
+    .map((p) => {
+      const what = p.part ? `Round sheet, rounds ${p.part.from} to ${p.part.to}` : 'Round sheet'
+      return `<a class="sheet" href="${esc(p.path)}" target="_blank" title="${what}, opens full size"><img src="${esc(p.path)}" alt="${what}" loading="lazy"><span>${what}</span></a>`
     })
     .join('')
   const won = s.won * 2 >= s.rounds ? 'good' : 'bad'
@@ -42,10 +76,11 @@ function situationCard(s: Situation, videos: SavedVideo[]): string {
 <header><h4>${esc(buyName(s))}</h4><span class="rec"><b class="${won}">${s.won}</b>/${s.rounds} won</span></header>
 ${notes ? `<ul class="notes">${notes}</ul>` : ''}
 ${clips}
+${pics}
 </article>`
 }
 
-function mapSection(m: MapScout, videos: SavedVideo[]): string {
+function mapSection(m: MapScout, videos: SavedVideo[], sheets: SavedSheet[]): string {
   const name = mapLabel(m.map)
   const tend = m.tendencies.slice(0, 5).map((t) => `<li>${esc(t)}</li>`).join('')
   const roles = m.roles
@@ -56,7 +91,8 @@ function mapSection(m: MapScout, videos: SavedVideo[]): string {
       const list = BUY_ORDER.flatMap((buy) => {
         const s = m.situations.find((x) => x.side === side && x.buy === buy)
         const vids = s ? videos.filter((v) => v.situation === s) : []
-        return s && vids.length ? [situationCard(s, vids)] : []
+        const pics = s ? sheets.filter((p) => p.situation === s) : []
+        return s && (vids.length || pics.length) ? [situationCard(s, vids, pics)] : []
       })
       if (!list.length) return ''
       return `<h3 class="${side}">${side.toUpperCase()} side</h3><div class="grid">${list.join('')}</div>`
@@ -73,8 +109,25 @@ ${sides}
 </section>`
 }
 
-export function indexHtml(teamName: string, scouts: MapScout[], videos: SavedVideo[]): string {
-  const maps = scouts.filter((m) => videos.some((v) => v.map === m.map))
+// Jumps a video to a round from its list and marks the round playing.
+const SCRIPT = `document.addEventListener('click', (e) => {
+  const b = e.target.closest('.ch button')
+  if (!b) return
+  const v = b.closest('.clip').querySelector('video')
+  v.currentTime = Number(b.dataset.t)
+  v.play()
+})
+for (const v of document.querySelectorAll('.clip video')) {
+  const list = [...v.closest('.clip').querySelectorAll('.ch button')]
+  v.addEventListener('timeupdate', () => {
+    let k = -1
+    list.forEach((b, i) => { if (Number(b.dataset.t) <= v.currentTime + 0.05) k = i })
+    list.forEach((b, i) => b.classList.toggle('on', i === k))
+  })
+}`
+
+export function indexHtml(teamName: string, scouts: MapScout[], videos: SavedVideo[], sheets: SavedSheet[] = []): string {
+  const maps = scouts.filter((m) => videos.some((v) => v.map === m.map) || sheets.some((p) => p.map === m.map))
   const team = teamName.trim() || 'the team'
   const nav = maps.map((m) => `<a href="#${esc(m.map)}">${esc(mapLabel(m.map))}</a>`).join('')
   return `<!doctype html>
@@ -109,18 +162,33 @@ td i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7p
 .rec{color:var(--text-3)}.good{color:var(--good)}.bad{color:var(--bad)}
 .notes{margin:0 0 8px;padding-left:18px;color:var(--text-2)}
 .part{color:var(--text-3);font-size:13px;margin:8px 0 4px}
+.clip+.clip{margin-top:10px}
 video{width:100%;border-radius:4px;background:#000;display:block}
+.ch{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:2px;max-height:180px;overflow-y:auto}
+.ch button{all:unset;box-sizing:border-box;width:100%;display:flex;justify-content:space-between;gap:10px;padding:3px 8px;border-radius:4px;cursor:pointer;color:var(--text-2);font-size:13px}
+.ch button:hover{background:var(--line);color:var(--text)}
+.ch button:focus-visible{outline:2px solid var(--accent)}
+.ch button.on{background:var(--line);color:var(--text)}
+.ch span+span{font-size:12px}
+.ch time{color:var(--text-3);font-variant-numeric:tabular-nums;margin-right:10px}
+.sheet{display:block;margin-top:10px;color:var(--text-3);font-size:13px;text-decoration:none}
+.sheet img{width:100%;border-radius:4px;display:block;border:1px solid var(--line)}
+.sheet span{display:block;margin-top:4px}
+.sheet:hover span{color:var(--text)}
 footer{margin-top:48px;color:var(--text-3);font-size:13px}
 </style>
 </head>
 <body>
 <main>
 <h1>${esc(team)}</h1>
-<p class="dim">Scouting videos by map, side and round type.</p>
+<p class="dim">Scouting videos and round sheets by map, side and round type.</p>
 <nav>${nav}</nav>
-${maps.map((m) => mapSection(m, videos.filter((v) => v.map === m.map))).join('\n')}
+${maps.map((m) => mapSection(m, videos.filter((v) => v.map === m.map), sheets.filter((p) => p.map === m.map))).join('\n')}
 <footer>Made with CerlockCS</footer>
 </main>
+<script>
+${SCRIPT}
+</script>
 </body>
 </html>
 `

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { lengthSeconds, pages, sizeOf, SLOW_AFTER, SLOW_BEFORE, STORY_HOLD, STORY_INTRO, storyAt, storyPages, storyPlan, teamFolder, videoPath } from './videos'
+import { chaptersOf, lengthSeconds, pages, playedLength, sheetPages, sheetPath, sizeOf, SLOW_AFTER, SLOW_BEFORE, STORY_HOLD, STORY_INTRO, storyAt, storyPages, storyPlan, teamFolder, videoPath } from './videos'
 
 describe('videoPath', () => {
   it('puts each video in team, map and side folders', () => {
@@ -79,6 +79,15 @@ describe('storyPlan', () => {
     expect(storyAt(plan, 5.5).intro).toBeGreaterThan(0)
   })
 
+  it('knows where each round starts, to jump there', () => {
+    const plan = storyPlan(rounds, 2, 5)
+    const ch = chaptersOf(plan)
+    expect(ch.map((c) => c.round)).toEqual(rounds.map((r) => r.round))
+    expect(ch[0].at).toBe(5)
+    expect(ch[1].at).toBe(plan.parts[1].start)
+    expect(storyAt(plan, ch[1].at + 0.01).k).toBe(1)
+  })
+
   it('splits long sets into videos of at most five minutes', () => {
     const many = Array.from({ length: 10 }, (_, i) => ({ round: i, length: 100 }))
     const parts = storyPages(many, 2)
@@ -99,5 +108,25 @@ describe('pages', () => {
 
   it('names the parts by their rounds', () => {
     expect(videoPath('E-ManiacS', 'de_mirage', { side: 'ct', buy: 'full' }, 'mp4', { from: 10, to: 18 })).toBe('e-maniacs/mirage/ct/full-buys-rounds-10-18.mp4')
+  })
+
+  it('puts round sheets next to the videos', () => {
+    expect(sheetPath('E-ManiacS', 'de_mirage', { side: 't', buy: 'eco' })).toBe('e-maniacs/mirage/t/eco-rounds.png')
+    expect(sheetPath('E-ManiacS', 'de_mirage', { side: 't', buy: 'eco' }, { from: 1, to: 9 })).toBe('e-maniacs/mirage/t/eco-rounds-rounds-1-9.png')
+    expect(sheetPages(Array.from({ length: 12 }, (_, i) => i)).map((p) => p.length)).toEqual([9, 3])
+  })
+})
+
+describe('playedLength', () => {
+  const track = (alive: number[][], end: number) =>
+    ({ end, players: alive.map((a) => ({ alive: Uint8Array.from(a) })) }) as unknown as Parameters<typeof playedLength>[0]
+
+  it('plays to the end while someone is alive', () => {
+    expect(playedLength(track([[1, 1, 1, 1], [1, 0, 0, 0]], 30), 10)).toBe(30)
+  })
+
+  it('stops shortly after the whole team is dead', () => {
+    // The last one alive at sample 1, 10 s apart: 10 s plus 2.
+    expect(playedLength(track([[1, 1, 0, 0], [1, 0, 0, 0]], 30), 10)).toBe(12)
   })
 })

@@ -96,6 +96,23 @@ export interface StoryPlan {
 export const COVER_PLAIN = 2.5
 export const COVER_NOTES = 5
 
+// Seconds a round goes on after the last of the team died, then it moves
+// on: the rest is an empty map.
+export const AFTER_LAST_DEATH = 2
+
+// playedLength is how long a round is worth showing: to its end, or until
+// shortly after the whole team was dead.
+export function playedLength(tr: SituationTrack, step: number): number {
+  let last = -1
+  let n = 0
+  for (const p of tr.players) {
+    n = Math.max(n, p.alive.length)
+    last = Math.max(last, p.alive.lastIndexOf(1))
+  }
+  if (!n || last >= n - 1) return tr.end
+  return Math.min(tr.end, Math.max(0, last) * step + AFTER_LAST_DEATH)
+}
+
 // fightsOf lists when the roster killed or died in a round.
 export function fightsOf(tr: SituationTrack): number[] {
   return tr.events.filter((e) => e.kind === 'kill' || e.kind === 'death').map((e) => e.t)
@@ -200,8 +217,8 @@ export function storyPages(rounds: StoryRound[], speed: number, max = STORY_MAX)
 // seconds when that is set.
 export function roundLengths(o: Overlay, rounds: readonly number[], seconds: number): StoryRound[] {
   return rounds.map((i) => {
-    const full = o.durationOf([i])
     const tr = o.situation.tracks[i]
+    const full = tr ? Math.min(o.durationOf([i]), playedLength(tr, o.step)) : o.durationOf([i])
     return { round: i, length: seconds > 0 ? Math.min(seconds, full) : full, fights: tr ? fightsOf(tr) : [] }
   })
 }
@@ -238,10 +255,51 @@ export function videoPath(teamName: string, map: string, s: Pick<Situation, 'sid
   return `${teamFolder(teamName)}/${m}/${s.side}/${BUY_FILE[s.buy]}${tail}.${ext}`
 }
 
+// sheetPath is where the round sheet of a situation goes, next to its
+// video, like "e-maniacs/mirage/ct/eco-rounds.png".
+export function sheetPath(teamName: string, map: string, s: Pick<Situation, 'side' | 'buy'>, part?: { from: number; to: number }): string {
+  return videoPath(teamName, map, s, 'png', part)
+}
+
+// sheetPages splits rounds into groups of one sheet each.
+export function sheetPages(rounds: number[]): number[][] {
+  return pages(rounds, 'rounds')
+}
+
+// renderSheet draws a still of every round at its end, each on a map of
+// its own, with the whole routes.
+export async function renderSheet(o: Overlay, opts: OverlayOptions, rounds: readonly number[], size: VideoSize): Promise<Blob> {
+  await o.prepare(size.w, size.h)
+  const c = document.createElement('canvas')
+  c.width = size.w
+  c.height = size.h
+  o.draw(c, o.durationOf(rounds), { ...opts, rounds: [...rounds], layout: 'rounds', sheet: true, story: undefined, intro: undefined, cover: undefined, length: undefined })
+  const blob = await new Promise<Blob | null>((r) => c.toBlob(r, 'image/png'))
+  c.width = c.height = 0
+  if (!blob) throw new Error('Could not make the image')
+  return blob
+}
+
 // videoLength is how long the video of these rounds is, in seconds.
 export function videoLength(o: Overlay, rounds: readonly number[] | null | undefined, seconds: number): number {
   const full = o.durationOf(rounds)
   return seconds > 0 ? Math.min(seconds, full) : full
+}
+
+// Chapter is where a round starts in a round by round video, with its
+// title card.
+export interface Chapter {
+  round: number
+  at: number
+}
+
+export interface StoryVideo extends Video {
+  chapters: Chapter[]
+}
+
+// chaptersOf lists where each round of a plan starts.
+export function chaptersOf(plan: StoryPlan): Chapter[] {
+  return plan.parts.map((p) => ({ round: p.round, at: p.start }))
 }
 
 // renderStory draws and encodes rounds one after another.
@@ -254,16 +312,17 @@ export async function renderStory(
   speed: number,
   onprogress?: (done: number) => void,
   signal?: AbortSignal,
-): Promise<Video> {
+): Promise<StoryVideo> {
   await o.prepare(size.w, size.h)
   const cover = o.situation.notes.length ? COVER_NOTES : COVER_PLAIN
   const plan = storyPlan(roundLengths(o, rounds, seconds), speed, cover)
   // One set of options per round, the overlay keys its cache on them.
   const views: OverlayOptions[] = plan.parts.map((p, k) => {
     const story: Story = { n: k + 1, of: plan.parts.length }
-    return { ...opts, layout: 'together', rounds: [p.round], story, length: seconds > 0 ? seconds : undefined }
+    // The time bar ends where the round is cut.
+    return { ...opts, layout: 'together', rounds: [p.round], story, length: p.length }
   })
-  return encodeVideo({
+  const v = await encodeVideo({
     width: size.w,
     height: size.h,
     fps: FPS,
@@ -278,6 +337,7 @@ export async function renderStory(
     signal,
     maxBytes: MAX_VIDEO_BYTES,
   })
+  return { ...v, chapters: chaptersOf(plan) }
 }
 
 // renderVideo draws and encodes one situation the way it is set up in

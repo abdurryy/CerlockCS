@@ -10,8 +10,10 @@
     DEFAULT_SPEED,
     fightsOf,
     FPS,
+    playedLength,
     lengthSeconds,
     MAX_VIDEO_BYTES,
+    renderSheet,
     renderStory,
     renderVideo,
     roundLengths,
@@ -82,8 +84,14 @@
   const story = $derived<Story | undefined>(oneByOne && pickedCount ? { n: cur + 1, of: pickedCount } : undefined)
   // One by one slows to real time around fights when it plays faster.
   const fights = $derived(oneByOne && rounds && rounds.length === 1 && s.tracks[rounds[0]] ? fightsOf(s.tracks[rounds[0]]) : [])
-  // As long as the longest of the picked rounds.
-  const duration = $derived(overlay ? overlay.durationOf(rounds) : 30)
+  // As long as the longest of the picked rounds. One by one a round ends
+  // shortly after the whole team is dead.
+  const duration = $derived.by(() => {
+    if (!overlay) return 30
+    const full = overlay.durationOf(rounds)
+    if (!oneByOne || !rounds || rounds.length !== 1 || !s.tracks[rounds[0]]) return full
+    return Math.min(full, playedLength(s.tracks[rounds[0]], overlay.step))
+  })
   const videoSecs = $derived(
     !overlay ? 0 : oneByOne ? storyPlan(roundLengths(overlay, pickedList, lengthSeconds(length)), exportSpeed, s.notes.length ? COVER_NOTES : COVER_PLAIN).total : videoLength(overlay, rounds, lengthSeconds(length)),
   )
@@ -91,7 +99,7 @@
   const exporting = $derived(progress >= 0)
   const shown = $derived(rounds ? rounds.map((i) => s.tracks[i]) : s.tracks)
   const marks = $derived(hitMarks(shown, duration, 10, 600))
-  const opts = $derived<OverlayOptions>({ rounds, highlight, floors, layout: layout === 'story' ? 'together' : layout, story })
+  const opts = $derived<OverlayOptions>({ rounds, highlight, floors, layout: layout === 'story' ? 'together' : layout, story, length: oneByOne ? duration : undefined })
   const players = $derived.by(() => {
     const seen = new Map<string, { steamId: string; name: string; color: string; role: string }>()
     for (const r of scout.roles) seen.set(r.steamId, { steamId: r.steamId, name: r.name, color: r.color, role: s.side === 'ct' ? r.ct.label : r.t.label })
@@ -260,6 +268,23 @@
     saved = name
   }
 
+  // saveSheet saves a still of every picked round at its end, a map per
+  // round, as many as fit on one image.
+  async function saveSheet() {
+    if (!overlay || exporting || !pickedCount) return
+    error = ''
+    try {
+      const blob = await renderSheet(overlay, { highlight, floors }, pickedList.slice(0, MAX_ROUND_MAPS), sizeOf(size))
+      const name = `${baseName}-rounds.png`
+      downloadBlob(blob, name)
+      saved = pickedCount > MAX_ROUND_MAPS ? `${name}, the first ${MAX_ROUND_MAPS} rounds` : name
+    } catch (e) {
+      error = (e as Error).message || 'Could not make the image'
+    } finally {
+      tick++
+    }
+  }
+
   function close() {
     abort?.abort()
     onclose?.()
@@ -396,6 +421,9 @@
           </button>
           <button class="ghost" disabled={!overlay || exporting} title="Save this moment as a PNG" onclick={saveFrame}>
             <ScoutIcon name="image" size={15} /><span>Save frame</span>
+          </button>
+          <button class="ghost" disabled={!overlay || exporting || !pickedCount} title="Save every picked round on one image, a small map per round with the whole routes" onclick={saveSheet}>
+            <ScoutIcon name="image" size={15} /><span>Save round sheet</span>
           </button>
           <span class="note" aria-live="polite">
             {#if error}

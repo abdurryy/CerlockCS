@@ -65,6 +65,9 @@ export interface OverlayOptions {
   intro?: number
   // How much of the video's summary card covers the map, 0 to 1.
   cover?: number
+  // A still of every round at its end, with the whole routes: rounds do
+  // not fade and there is no clock.
+  sheet?: boolean
 }
 
 export interface Story {
@@ -190,6 +193,12 @@ export function placeAt(tr: SituationTrack, p: TrackPlayer, step: number, t: num
   if (!p.place || !tr.places) return ''
   const i = Math.max(0, Math.min(p.place.length - 1, Math.round(t / step)))
   return tr.places[p.place[i]] ?? ''
+}
+
+// gunAt is the gun a player carries at t seconds, 0 for none.
+export function gunAt(p: TrackPlayer, step: number, t: number): number {
+  if (!p.gun) return 0
+  return p.gun[Math.max(0, Math.min(p.gun.length - 1, Math.round(t / step)))]
 }
 
 // rgba turns '#rrggbb' into a colour with alpha.
@@ -388,6 +397,8 @@ export class Overlay {
   private span = 0
   // Many rounds on screen this frame: draw less.
   private busy = false
+  // Drawing a round sheet, where the routes are the main thing.
+  private sheet = false
   // While drawing: the round being drawn, and on player maps whether it
   // goes on the player's own map or on the one with everyone.
   private cur: PTrack | null = null
@@ -406,7 +417,7 @@ export class Overlay {
   private bg: { key: string; canvas: HTMLCanvasElement; layout: Layout } | null = null
   // What the last frame was asked for, so a frame like the one before
   // skips the checks.
-  private last = { w: 0, h: 0, rounds: null as OverlayOptions['rounds'], floors: undefined as FloorMode | undefined, hi: undefined as string | null | undefined, length: undefined as number | undefined, layout: undefined as OverlayLayout | undefined, story: undefined as Story | undefined, vis: [] as PTrack[] }
+  private last = { w: 0, h: 0, rounds: null as OverlayOptions['rounds'], floors: undefined as FloorMode | undefined, hi: undefined as string | null | undefined, length: undefined as number | undefined, layout: undefined as OverlayLayout | undefined, story: undefined as Story | undefined, sheet: undefined as boolean | undefined, vis: [] as PTrack[] }
   private pt = new Float64Array(5)
   private trailX = new Float64Array(0)
   private trailY = new Float64Array(0)
@@ -448,6 +459,14 @@ export class Overlay {
       for (const e of tr.events) {
         const icon = e.weapon !== undefined ? weaponIcon(e.weapon) : null
         if (icon) guns.add(icon)
+      }
+      // And the guns they carry, shown next to their names.
+      for (const p of tr.players) {
+        if (!p.gun) continue
+        for (const id of new Set(p.gun)) {
+          const icon = id ? weaponIcon(id) : null
+          if (icon) guns.add(icon)
+        }
       }
     }
     const [stage] = await Promise.all([stageFor(scout.info, labels, [situation.heat20, scout.team.ct, scout.team.t]), assetsAt(60, ['hud/dead', 'weapon/c4', 'weapon/smokegrenade', 'weapon/molotov', 'weapon/incgrenade', 'kill/headshot', ...guns])])
@@ -517,7 +536,7 @@ export class Overlay {
     const ctx = target.getContext('2d') as CanvasRenderingContext2D | null
     if (!ctx) return
     const last = this.last
-    const same = !!this.bg && last.w === w && last.h === h && last.rounds === opts.rounds && last.floors === opts.floors && last.hi === opts.highlight && last.length === opts.length && last.layout === opts.layout && last.story === opts.story
+    const same = !!this.bg && last.w === w && last.h === h && last.rounds === opts.rounds && last.floors === opts.floors && last.hi === opts.highlight && last.length === opts.length && last.layout === opts.layout && last.story === opts.story && last.sheet === opts.sheet
     const vis = same ? last.vis : this.visible(opts)
     if (!same) this.span = lengthOf(vis.map((v) => v.track), opts.length && opts.length > 0 ? Math.min(opts.length, this.duration) : this.duration)
     const bg = same ? this.bg! : this.background(w, h, opts, vis)
@@ -529,6 +548,7 @@ export class Overlay {
     last.length = opts.length
     last.layout = opts.layout
     last.story = opts.story
+    last.sheet = opts.sheet
     last.vis = vis
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.globalAlpha = 1
@@ -537,10 +557,12 @@ export class Overlay {
     const L = bg.layout
     const time = Math.max(0, Math.min(this.span, t))
     const hi = opts.highlight ?? null
-    // Rounds that are over fade out and then leave the map.
-    const on = vis.filter((tr) => fadeOf(tr.track, time) > 0)
+    // Rounds that are over fade out and then leave the map, on a sheet
+    // they stay as they ended.
+    const on = opts.sheet ? vis : vis.filter((tr) => fadeOf(tr.track, time) > 0)
     // A map per round has one round on each map, so nothing is left out.
     this.busy = vis.length >= BUSY && L.grid !== 'rounds'
+    this.sheet = !!opts.sheet
     // Clip to the map area so nothing runs into the side column.
     ctx.save()
     ctx.beginPath()
@@ -558,7 +580,7 @@ export class Overlay {
     if (vis.length === 1 && on.length && !L.grid) this.drawNames(ctx, L, vis[0], time, hi)
     ctx.restore()
     if (!vis.length) this.drawEmpty(ctx, L)
-    this.drawClock(ctx, L, time)
+    if (!opts.sheet) this.drawClock(ctx, L, time)
     if (opts.story && vis.length === 1) this.drawFeed(ctx, L, vis[0], time)
     if (opts.story && opts.intro && opts.intro > 0 && vis.length === 1) this.drawIntro(ctx, L, vis[0], opts.story, opts.intro)
     if (opts.cover && opts.cover > 0) this.drawCover(ctx, L, opts.cover)
@@ -771,17 +793,20 @@ export class Overlay {
   }
 
   private drawRounds(ctx: CanvasRenderingContext2D, L: Layout, vis: PTrack[], on: PTrack[], time: number, hi: string | null, opts: OverlayOptions) {
+    // On a sheet every round is shown at its own end.
+    const at = (tr: PTrack) => (opts.sheet ? Math.min(time, tr.track.end) : time)
+    const fade = (tr: PTrack) => (opts.sheet ? 1 : fadeOf(tr.track, time))
     for (const tr of on) {
       this.cur = tr
-      this.drawAreas(ctx, L, tr, time, hi)
+      this.drawAreas(ctx, L, tr, at(tr), hi)
     }
     for (const tr of on) {
       this.cur = tr
-      this.drawPops(ctx, L, tr, time, hi)
+      this.drawPops(ctx, L, tr, at(tr), hi)
     }
     for (const tr of on) {
       this.cur = tr
-      this.drawMarks(ctx, L, tr, time, hi)
+      this.drawMarks(ctx, L, tr, at(tr), hi)
     }
     const trail = Math.min(this.busy ? BUSY_TRAIL : Infinity, Math.max(0, opts.trail ?? TRAIL))
     // View cones only when they stay readable: one round on a map, or the
@@ -793,15 +818,14 @@ export class Overlay {
     const paths = vis.length === 1 || L.grid === 'rounds'
     for (const tr of on) {
       this.cur = tr
-      const f = fadeOf(tr.track, time)
       const num = numbered ? tr.index + 1 : 0
-      for (const pp of tr.players) if (!hi || pp.p.steamId !== hi) this.drawPlayer(ctx, L, pp, time, trail, (hi ? FADED : 1) * f, false, cones && !hi, num, paths)
+      for (const pp of tr.players) if (!hi || pp.p.steamId !== hi) this.drawPlayer(ctx, L, pp, at(tr), trail, (hi ? FADED : 1) * fade(tr), false, cones && !hi, num, paths)
     }
     if (hi) {
       for (const tr of on) {
         this.cur = tr
         const num = numbered ? tr.index + 1 : 0
-        for (const pp of tr.players) if (pp.p.steamId === hi) this.drawPlayer(ctx, L, pp, time, trail, fadeOf(tr.track, time), true, true, num, paths)
+        for (const pp of tr.players) if (pp.p.steamId === hi) this.drawPlayer(ctx, L, pp, at(tr), trail, fade(tr), true, true, num, paths)
       }
     }
   }
@@ -811,7 +835,7 @@ export class Overlay {
   private background(w: number, h: number, opts: OverlayOptions, vis: PTrack[]): { canvas: HTMLCanvasElement; layout: Layout } {
     const floors = floorsFor(this.heights, opts.floors ?? 'auto')
     const grid = opts.layout === 'players' && this.legend.length > 1 ? 'players' : opts.layout === 'rounds' && vis.length > 1 ? 'rounds' : ''
-    const key = [w, h, floors.join(','), opts.highlight ?? '', this.span, grid, opts.story ? `${opts.story.n}/${opts.story.of}` : '', vis.map((v) => v.index).join(',')].join('|')
+    const key = [w, h, floors.join(','), opts.highlight ?? '', this.span, grid, opts.story ? `${opts.story.n}/${opts.story.of}` : '', opts.sheet ? 'sheet' : '', vis.map((v) => v.index).join(',')].join('|')
     if (this.bg && this.bg.key === key) return this.bg
     const cells: Cell[] =
       grid === 'players' ? [...this.legend.map((player) => ({ player })), { all: true }] : grid === 'rounds' ? vis.map((v) => ({ round: v.index })) : []
@@ -1032,9 +1056,18 @@ export class Overlay {
     this.head(ctx, L, vis, { kicker: 74 * u, title: 136 * u, sub: 186 * u, size: 64 }, colW + 40 * u, w - 128 * u - logoW - 40 * u, opts.story)
     logoMark(ctx, this.logo(w, h), w - 64 * u, 136 * u, this.logoHeight(w, h))
 
-    // Clock and time bar.
-    label(ctx, 'Time after freeze', x0, 252 * u, u)
-    this.paintBar(ctx, L, vis)
+    // Clock and time bar, or on a sheet what it shows.
+    if (opts.sheet) {
+      label(ctx, 'Round sheet', x0, 252 * u, u)
+      font(ctx, 500, 21, u, 0, FONT)
+      ctx.fillStyle = TEXT_2
+      ctx.textAlign = 'left'
+      const lines = wrap(ctx, 'Every round from freeze time to its end: the routes they walked, crosses where they died and skulls where they got kills.', colW, 4)
+      lines.forEach((ln, i) => ctx.fillText(ln, x0, 292 * u + i * 29 * u))
+    } else {
+      label(ctx, 'Time after freeze', x0, 252 * u, u)
+      this.paintBar(ctx, L, vis)
+    }
 
     // Players.
     let y = 470 * u
@@ -1119,8 +1152,16 @@ export class Overlay {
     const room = w - 72 * u - logoW - 40 * u - 72 * u
     this.head(ctx, L, vis, { kicker: 96 * u, title: 172 * u, sub: 224 * u, size: 76 }, room, room, opts.story)
     logoMark(ctx, this.logo(w, h), w - 72 * u, 172 * u, this.logoHeight(w, h))
-    label(ctx, 'Time after freeze', 72 * u, h - 214 * u, u)
-    this.paintBar(ctx, L, vis)
+    if (opts.sheet) {
+      label(ctx, 'Round sheet', 72 * u, h - 214 * u, u)
+      font(ctx, 500, 17, u, 0, FONT)
+      ctx.fillStyle = TEXT_2
+      ctx.textAlign = 'left'
+      wrap(ctx, 'Routes from freeze time to the end, crosses are deaths.', 400 * u, 3).forEach((ln, i) => ctx.fillText(ln, 72 * u, h - 176 * u + i * 24 * u))
+    } else {
+      label(ctx, 'Time after freeze', 72 * u, h - 214 * u, u)
+      this.paintBar(ctx, L, vis)
+    }
     // Numbers in the middle, players on the right.
     const right = w - 72 * u
     const legendW = this.paintLegendSquare(ctx, L, opts, right)
@@ -1625,7 +1666,8 @@ export class Overlay {
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
     ctx.strokeStyle = p.color
-    ctx.lineWidth = 2 * L.u
+    ctx.lineWidth = (this.sheet ? 2.6 : 2) * L.u
+    const strength = this.sheet ? 0.78 : 0.32
     let lv = -1
     let open = false
     let v: View | null = null
@@ -1638,7 +1680,7 @@ export class Overlay {
         const where = this.at(L, lv, p.steamId)
         if (!where) continue
         v = where.p.v
-        ctx.globalAlpha = alpha * where.a * 0.32
+        ctx.globalAlpha = alpha * where.a * strength
         ctx.beginPath()
         ctx.moveTo(v.ox + p.xs[i] * v.k, v.oy + p.ys[i] * v.k)
         open = true
@@ -1700,14 +1742,24 @@ export class Overlay {
       ctx.strokeText(pp.p.name, x, y)
       ctx.fillStyle = TEXT
       ctx.fillText(pp.p.name, x, y)
-      // Where they are, from the demo, while they are alive.
+      let nx = x + ctx.measureText(pp.p.name).width + 6 * u
+      // Their gun and where they are, from the demo, while they are alive.
+      const gun = pt[3] ? gunAt(pp.p, this.step, t) : 0
+      const icon = gun ? weaponIcon(gun, this.situation.side === 'ct' ? 3 : 2) : null
+      const ih = 11 * u
+      const bm = icon ? iconBitmap(icon, null, ih) : null
+      if (bm) {
+        const iw = (bm.width / bm.height) * ih
+        drawIcon(ctx, icon, nx + iw / 2, y, ih, TEXT_2)
+        nx += iw + 6 * u
+      }
       const place = pt[3] ? placeAt(tr.track, pp.p, this.step, t) : ''
       if (place) {
-        const nx = x + ctx.measureText(pp.p.name).width + 6 * u
         font(ctx, 500, 13, u, 0.02)
         ctx.strokeText(place, nx, y + 0.5 * u)
         ctx.fillStyle = TEXT_2
         ctx.fillText(place, nx, y + 0.5 * u)
+        font(ctx, 600, 15, u, 0.02)
       }
     }
     ctx.globalAlpha = 1

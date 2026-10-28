@@ -1,22 +1,26 @@
 <script lang="ts">
   import { exportFolder, openExport, saveExport } from '../lib/api'
   import { mapLabel } from '../lib/format'
-  import { indexHtml, type SavedVideo } from '../lib/scout/indexpage'
+  import { indexHtml, type SavedSheet, type SavedVideo } from '../lib/scout/indexpage'
   import { scoutOptions } from '../lib/scout/aggregate'
   import { clockText, lengthOf, Overlay } from '../lib/scout/overlay'
   import type { MapScout, Situation } from '../lib/scout/types'
-  import { Cancelled, targetBitrate } from '../lib/scout/video'
+  import { Cancelled, targetBitrate, type Video } from '../lib/scout/video'
   import {
     COVER_NOTES,
     COVER_PLAIN,
     DEFAULT_SPEED,
     fightsOf,
+    playedLength,
     FPS,
     lengthSeconds,
     MAX_VIDEO_BYTES,
     pages,
+    renderSheet,
     renderStory,
     renderVideo,
+    sheetPages,
+    sheetPath,
     sizeOf,
     storyPages,
     storyPlan,
@@ -26,6 +30,7 @@
     VIDEO_SIZES,
     VIDEO_SPEEDS,
     videoPath,
+    type Chapter,
     type VideoLayout,
   } from '../lib/scout/videos'
   import Icon from './Icon.svelte'
@@ -52,6 +57,7 @@
     stage: Stage
     path?: string
     error?: string
+    chapters?: Chapter[]
   }
 
   let size = $state('1080')
@@ -83,8 +89,9 @@
           const part = (pg: number[], split: boolean) => (split ? { from: pg[0] + 1, to: pg[pg.length - 1] + 1 } : undefined)
           if (lay === 'story') {
             // One after another, split so no video runs over five minutes.
+            const step = scoutOptions(m).trackStep
             const lens = s.tracks.map((tr, i) => {
-              const full = lengthOf([tr], max)
+              const full = Math.min(lengthOf([tr], max), playedLength(tr, step))
               return { round: i, length: cut > 0 ? Math.min(cut, full) : full, fights: fightsOf(tr) }
             })
             const groups = storyPages(lens, speed)
@@ -171,6 +178,9 @@
     const t0 = performance.now()
     const all = list.reduce((n, i) => n + i.secs, 0)
     let secsDone = 0
+    // Every situation gets its round sheets once, with its first video.
+    const sheets: SavedSheet[] = []
+    const sheeted = new Set<Situation>()
     for (const it of list) {
       if (signal.aborted) break
       current = it.key
@@ -185,13 +195,32 @@
           const spent = (performance.now() - t0) / 1000
           if (spent > 5 && did > 0) left = minutes(((all - did) * spent) / did)
         }
-        const v =
-          it.layout === 'story'
-            ? await renderStory(o, {}, it.rounds ?? it.s.tracks.map((_, i) => i), sz, cut, speed, onp, signal)
-            : await renderVideo(o, { layout: it.layout, rounds: it.rounds }, sz, cut, onp, signal)
+        let v: Video
+        let chapters: Chapter[] | undefined
+        if (it.layout === 'story') {
+          const sv = await renderStory(o, {}, it.rounds ?? it.s.tracks.map((_, i) => i), sz, cut, speed, onp, signal)
+          v = sv
+          chapters = sv.chapters
+        } else {
+          v = await renderVideo(o, { layout: it.layout, rounds: it.rounds }, sz, cut, onp, signal)
+        }
         const path = videoPath(teamName, it.scout.map, it.s, v.ext, it.part)
         await saveExport(path, v.blob)
-        done = { ...done, [it.key]: { stage: 'saved', path } }
+        done = { ...done, [it.key]: { stage: 'saved', path, chapters } }
+        if (!sheeted.has(it.s)) {
+          sheeted.add(it.s)
+          const groups = sheetPages(it.s.tracks.map((_, i) => i))
+          for (const g of groups) {
+            const part = groups.length > 1 ? { from: g[0] + 1, to: g[g.length - 1] + 1 } : undefined
+            const at = sheetPath(teamName, it.scout.map, it.s, part)
+            try {
+              await saveExport(at, await renderSheet(o, {}, g, sz))
+              sheets.push({ map: it.scout.map, situation: it.s, path: at.slice(folder.length + 1), part })
+            } catch {
+              // The video is what matters, a missing sheet is fine.
+            }
+          }
+        }
       } catch (e) {
         if (e instanceof Cancelled || signal.aborted) {
           done = { ...done, [it.key]: { stage: 'waiting' } }
@@ -205,11 +234,11 @@
     const saved: SavedVideo[] = list.flatMap((it) => {
       const d = done[it.key]
       if (d?.stage !== 'saved' || !d.path) return []
-      return [{ map: it.scout.map, situation: it.s, path: d.path.slice(folder.length + 1), part: it.part }]
+      return [{ map: it.scout.map, situation: it.s, path: d.path.slice(folder.length + 1), part: it.part, chapters: d.chapters }]
     })
     if (saved.length) {
       try {
-        const html = indexHtml(teamName, scouts, saved)
+        const html = indexHtml(teamName, scouts, saved, sheets)
         const at = `${folder}/index.html`
         await saveExport(at, new Blob([html], { type: 'text/html' }))
         page = at
@@ -280,7 +309,7 @@
         <span class="badge"><ScoutIcon name="play" size={16} /></span>
         <div class="htext">
           <h2 id="videos-title">Save all videos</h2>
-          <span>One video per map, side and round type, every round of it on the map at the same time.</span>
+          <span>One video per map, side and round type, plus a round sheet image with every round of it.</span>
         </div>
         <button class="plain close" title={running ? 'Keep it going in the corner (Esc)' : 'Close (Esc)'} aria-label="Close" onclick={close}><Icon name="x" size={16} /></button>
       </header>
