@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.4.0
+
+A game plan against the team you scout.
+
+- Game plan: at the top of every map's report, what to do on your T side and your CT side against each of their round types. Where to hit, when a fake works and when to just go fast, where they push early and where their AWP sits, which site they rush and when your utility has to be out, where they lose and win the first duel, where to plant and how they play after their own plant, and what they buy after a lost pistol
+- Every line says how many rounds it rests on, is marked Seen a lot, Likely or Few rounds, and has a play button that opens Watch with just those rounds
+- Copy plan for the team chat, a game plan image in the gallery and the zip, and the plan on the video page with links down to the videos
+- New numbers behind it, per round: how fast they rotate once a site is hit, the first duel and where it was, lurkers, the AWP spot and the way the T side came in
+- Write it up: turns the plan into a short text for your team with a language model. Off until you pick one: Ollama on your own PC, or a free key from Groq or OpenRouter. It only gets the plan, the tendencies and the roles. Keys stay in the settings file on your PC
+
+How to run it:
+
+- Windows: download `cerlock-windows-amd64.exe` and double click it. Windows may warn about an unknown publisher since the exe is not signed, click "More info" and then "Run anyway".
+- Linux and macOS: download the `.tar.gz` for your system, extract it and run `./cerlock`.
+
 ## v0.3.7
 
 Round sheets and quicker videos.

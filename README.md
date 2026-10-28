@@ -39,7 +39,7 @@ I play ESEA league and FACEIT with my team. We wanted one place to review our ow
 - **Runs on your PC.** Demos are parsed on your machine and never leave it.
 - **Fast.** A 299 MB FACEIT demo is ready in about 7.6 seconds, a 39 MB matchmaking demo in about 3.5.
 - **Made for teams.** It shows the single moments that lost rounds and how much win chance each one cost. Click one and you are watching it.
-- **Scouting.** Paste your next opponent's FACEIT room. Cerlock finds the games where 4 or 5 of them queued together and makes a report per map, with images you can post straight in your team's Discord.
+- **Scouting.** Paste your next opponent's FACEIT room. Cerlock finds the games where 4 or 5 of them queued together and makes a report per map with a game plan against them, and images you can post straight in your team's Discord.
 
 The name is Sherlock with the "Sh" swapped for the C in CS. A demo is a case: every round leaves evidence, and Cerlock lays it out for you.
 
@@ -119,13 +119,33 @@ Teams in ESEA often have few league games to look at, but their players queue FA
 2. Paste the opponent's match room link (`https://www.faceit.com/en/cs2/room/1-...`) or their team page. Cerlock lists both teams with their players.
 3. Cerlock walks the last 100 matches of every player and keeps the ones where at least four of them were on the same side, newest first, with the map, the score and a link to the match room. You also see their map pool.
 4. Get the demos. Open each match room and click "Watch demo". Cerlock watches your Downloads folder and picks FACEIT demos up by itself (turn it off with `--downloads=false`), or you can drop them in. They are matched to the players by SteamID. If your key has download access (see the [FAQ](#faq)), Cerlock downloads them itself into `demos/faceit` in the data folder.
-5. Build the report. For every map you get 30+ PNG images in one style, with the team or player name in the top corner and the Cerlock logo in the other: a summary card, the whole team on CT and T, T executes per site with the utility and plants, post plant and retake positions, opening duels, utility with throw lines, pistol and eco rounds, every round type on its own, where each player holds, AWP spots, kills and deaths, and per player their early CT and T positions. Download them one by one or as a zip per map.
+5. Build the report. For every map you get 30+ PNG images in one style, with the team or player name in the top corner and the Cerlock logo in the other: a summary card, the game plan, the whole team on CT and T, T executes per site with the utility and plants, post plant and retake positions, opening duels, utility with throw lines, pistol and eco rounds, every round type on its own, where each player holds, AWP spots, kills and deaths, and per player their early CT and T positions. Download them one by one or as a zip per map.
 
 ![The scouting report of one map](docs/scout.png)
 
 <p>
   <img src="docs/poster-summary.png" width="49%" alt="Summary card of a team on Nuke">
   <img src="docs/poster-execute.png" width="49%" alt="A site execute on Nuke with utility and plants">
+</p>
+
+### Game plan
+
+At the top of every map's report is a game plan: what to do against them on your T side and your CT side, split by their round type. It is built from rules over what they did in the demos, not guessed. Some examples of what it looks for:
+
+- **Where to hit**: the site they leave with 1 player or less at 15 s, and how the rounds went for the teams that hit each site ("Hit B. At 15 s B had 1 player or less in 5 of 6. Teams that went B won 3 of 4.")
+- **Fakes or speed**: how fast they rotate once a site is hit. If 2 or more come over within a few seconds, fake first. If help comes late, hit fast and plant.
+- **Their early pushes and AWP spots**, with who does it and where, so you can hold it or smoke it.
+- **Rushes**: the site they rush on each round type and when, so you know when your utility has to be out ("Stack B early and have utility on Apartments by 0:10").
+- **First duels**: where they keep losing the first fight and where they keep winning it.
+- **After the plant**: the site where their retake fails, and the spots they play after their own plant.
+- **Economy**: what they buy after losing a pistol.
+
+Every line says how many rounds it rests on and is marked Seen a lot, Likely or Few rounds. Click the play button next to a line to watch exactly those rounds. Copy plan puts it all in your team chat, and the plan is also an image in the gallery and on the video page.
+
+**Write it up** turns the plan into a short text for your team with a language model. It is off until you pick one: [Ollama](https://ollama.com/download) on your own PC (free, nothing leaves it), or a free key from [Groq](https://console.groq.com/keys) or [OpenRouter](https://openrouter.ai/keys). The model only gets the lines of the plan, the tendencies and the roles, and it is told to use nothing else, so it cannot make up much. Keys are kept in Cerlock's settings file on your PC and never go back to the browser.
+
+<p align="center">
+  <img src="docs/game-plan.png" width="70%" alt="The game plan against a team on Nuke">
 </p>
 
 ### Situations, roles and spots
@@ -226,7 +246,11 @@ Cerlock never touches the game. It does not inject anything, hook into CS2 or re
 
 #### Does it upload my demos?
 
-No. Everything runs on your PC and your demos stay there. Cerlock only goes online to download radar images and weapon icons the first time it needs them (turn that off with `--offline`), and to talk to the FACEIT API when you scout. There is no tracking of any kind.
+No. Everything runs on your PC and your demos stay there. Cerlock only goes online to download radar images and weapon icons the first time it needs them (turn that off with `--offline`), to talk to the FACEIT API when you scout, and, if you set it up with Groq or OpenRouter, to send the text of a game plan when you click Write it up. There is no tracking of any kind.
+
+#### Will the game plan win us rounds?
+
+It tells you what they keep doing and what worked against them, with the number of rounds behind every line. That is a good place to start, but it is not a promise. With only a couple of rounds a pattern can be luck, teams change their plan, and you still have to play it out. Watch the rounds behind a line before you build a strat on it, and add more of their demos to firm it up.
 
 #### Why does Windows warn me about an unknown publisher?
 
