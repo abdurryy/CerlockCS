@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.3.4
+
+Situation videos you can actually read.
+
+- Map per round: every round gets a small map of its own, side by side and all playing at once, with the round's number, won or lost and the site they hit above it. You see how each round went instead of a pile of dots. It's the default for 2 to 9 rounds. With more rounds Save all videos splits it into parts, like `full-buys-rounds-10-18.mp4`, or uses a map per player
+- Round numbers in the dots: on one map and on the player maps every dot carries the number of its round, and the round list shows the same numbers on green for won and red for lost
+- Map per player now ends with a map of all players together
+- Watch has three layouts: per round, per player and one map
+
+How to run it:
+
+- Windows: download `cerlock-windows-amd64.exe` and double click it. Windows may warn about an unknown publisher since the exe is not signed, click "More info" and then "Run anyway".
+- Linux and macOS: download the `.tar.gz` for your system, extract it and run `./cerlock`.
+
 ## v0.3.3
 
 Situation videos are easier to read.
