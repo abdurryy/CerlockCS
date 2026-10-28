@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clock, gamePlan, planText, strengthOf, type PlanLine } from './plan'
+import { clock, factsText, gamePlan, planText, strengthOf, writeupBlocks, type PlanLine } from './plan'
 import type { BuyKind, MapScout, PlantScout, Situation, SituationTrack, TrackFacts } from './types'
 
 function track(round: number, won: boolean, hit: string, hitTime: number, facts: Partial<TrackFacts>, replayId = 'm1'): SituationTrack {
@@ -167,5 +167,29 @@ describe('clock', () => {
   it('writes minutes and seconds', () => {
     expect(clock(70)).toBe('1:10')
     expect(clock(9.6)).toBe('0:10')
+  })
+})
+
+describe('writeupBlocks', () => {
+  it('reads headings and bullets and drops markdown', () => {
+    expect(writeupBlocks('## Main points\n\n- **Hit B** now\n1. Plant A\nThey rotate late, so go fast.')).toEqual([
+      { kind: 'h', text: 'Main points' },
+      { kind: 'li', text: 'Hit B now' },
+      { kind: 'li', text: 'Plant A' },
+      { kind: 'p', text: 'They rotate late, so go fast.' },
+    ])
+  })
+})
+
+describe('factsText', () => {
+  it('adds the tendencies and roles to the plan', () => {
+    const s = {
+      ...scout([]),
+      tendencies: ['On CT full buys they stacked A.'],
+      roles: [{ name: 'Zo', ct: { rounds: 6, label: 'AWP', place: 'Window', placeShare: 0.7 }, t: { rounds: 0, label: '' } }],
+    } as unknown as MapScout
+    const text = factsText(s, 'Mirage', 'E-ManiacS')
+    expect(text).toContain('Their tendencies:\n- On CT full buys they stacked A.')
+    expect(text).toContain('- Zo: CT AWP at Window (6 rounds)')
   })
 })

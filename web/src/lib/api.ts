@@ -1,4 +1,5 @@
 import type {
+  AiSettings,
   ApiErrorCode,
   DownloadResult,
   Entry,
@@ -112,13 +113,51 @@ export function upload(file: File, onProgress: (p: number) => void): Promise<Ent
 
 export async function getSettings(): Promise<Settings> {
   const s = await json<Partial<Settings>>(await fetch('/api/settings'))
-  return { faceitKey: !!s.faceitKey, faceitKeyHint: s.faceitKeyHint ?? '' }
+  return { faceitKey: !!s.faceitKey, faceitKeyHint: s.faceitKeyHint ?? '', ai: cleanAi(s.ai) }
+}
+
+function cleanAi(a: Partial<AiSettings> | undefined): AiSettings {
+  const keys: AiSettings['keys'] = {}
+  for (const [id, k] of Object.entries(a?.keys ?? {})) keys[id] = { saved: !!k?.saved, hint: str(k?.hint) }
+  return {
+    provider: str(a?.provider),
+    model: str(a?.model),
+    url: str(a?.url),
+    keys,
+    providers: list<AiSettings['providers'][number]>(a?.providers).map((p) => ({
+      id: str(p.id),
+      name: str(p.name),
+      url: str(p.url),
+      model: str(p.model),
+      needsKey: !!p.needsKey,
+      keyPage: str(p.keyPage) || undefined,
+    })),
+  }
+}
+
+// saveAi picks the model that writes the game plan. key is for that
+// provider, leave it out to keep the saved one.
+export async function saveAi(change: { provider: string; model: string; url?: string; key?: string }): Promise<AiSettings> {
+  const s = await send<Partial<Settings>>('PUT', '/api/settings', { ai: change })
+  return cleanAi(s.ai)
+}
+
+// writePlan has the model write the game plan up from the facts.
+export async function writePlan(facts: string): Promise<{ text: string; model: string; provider: string }> {
+  const r = await send<{ text?: string; model?: string; provider?: string }>('POST', '/api/ai/write', { facts })
+  return { text: str(r.text), model: str(r.model), provider: str(r.provider) }
+}
+
+// aiModels lists the models Ollama has.
+export async function aiModels(): Promise<string[]> {
+  const r = await json<{ models?: unknown }>(await fetch('/api/ai/models'))
+  return list<unknown>(r.models).map(str).filter(Boolean)
 }
 
 // saveFaceitKey stores the key on the server. An empty key removes it.
 export async function saveFaceitKey(key: string): Promise<Settings> {
   const s = await send<Partial<Settings>>('PUT', '/api/settings', { faceitKey: key })
-  return { faceitKey: !!s.faceitKey, faceitKeyHint: s.faceitKeyHint ?? '' }
+  return { faceitKey: !!s.faceitKey, faceitKeyHint: s.faceitKeyHint ?? '', ai: cleanAi(s.ai) }
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : typeof v === 'number' ? String(v) : '')

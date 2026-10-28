@@ -501,8 +501,46 @@ export function gamePlan(scout: MapScout): GamePlan {
   return { map: scout.map, key, t, ct }
 }
 
+// factsText is everything the write-up may use: the plan, the tendencies
+// and the roles, as plain text.
+export function factsText(scout: MapScout, mapName: string, teamName: string): string {
+  const out = [planText(gamePlan(scout), mapName, teamName)]
+  if (scout.tendencies.length) out.push('', 'Their tendencies:', ...scout.tendencies.map((t) => `- ${t}`))
+  const roles = scout.roles.filter((r) => r.ct.rounds || r.t.rounds)
+  if (roles.length) {
+    out.push('', 'Their roles:')
+    for (const r of roles) {
+      const parts: string[] = []
+      if (r.ct.rounds) parts.push(`CT ${r.ct.label || 'Flex'}${r.ct.place && r.ct.placeShare >= 0.5 ? ` at ${r.ct.place}` : ''} (${rounds(r.ct.rounds)})`)
+      if (r.t.rounds) parts.push(`T ${r.t.label || 'Flex'} (${rounds(r.t.rounds)})`)
+      out.push(`- ${r.name}: ${parts.join(', ')}`)
+    }
+  }
+  return out.join('\n')
+}
+
+export interface WriteupBlock {
+  kind: 'h' | 'li' | 'p'
+  text: string
+}
+
+// writeupBlocks reads the written plan as headings, bullets and plain
+// lines, without the markdown some models add anyway.
+export function writeupBlocks(text: string): WriteupBlock[] {
+  return text
+    .split('\n')
+    .map((l) => l.trim().replace(/\*\*|__|`/g, '').replace(/^#+\s*/, ''))
+    .filter(Boolean)
+    .map((l): WriteupBlock => {
+      if (/^[-*•]\s+/.test(l)) return { kind: 'li', text: l.replace(/^[-*•]\s+/, '') }
+      if (/^\d+[.)]\s+/.test(l)) return { kind: 'li', text: l.replace(/^\d+[.)]\s+/, '') }
+      if (l.length <= 60 && !/[.!?,]$/.test(l)) return { kind: 'h', text: l.replace(/:$/, '') }
+      return { kind: 'p', text: l }
+    })
+}
+
 // planText writes a plan as plain text, for copying into a team chat or
-// for the AI write-up.
+// for the write-up.
 export function planText(plan: GamePlan, mapName: string, teamName: string): string {
   const out: string[] = [`Game plan against ${teamName || 'them'} on ${mapName}`]
   const mark: Record<Strength, string> = { strong: '', likely: '', weak: ' (few rounds)' }

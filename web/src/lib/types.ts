@@ -463,6 +463,26 @@ export interface Settings {
   faceitKey: boolean
   // The last characters of the key, like "...3f9a".
   faceitKeyHint: string
+  ai?: AiSettings
+}
+
+// The model that writes the game plan up, see internal/ai. Keys stay on
+// the server, only whether one is saved comes back.
+export interface AiProvider {
+  id: string
+  name: string
+  url: string
+  model: string
+  needsKey: boolean
+  keyPage?: string
+}
+
+export interface AiSettings {
+  provider: string
+  model: string
+  url: string
+  keys: Record<string, { saved: boolean; hint: string }>
+  providers: AiProvider[]
 }
 
 // Scouting through the FACEIT Data API, see internal/faceit.
@@ -527,4 +547,17 @@ export interface DownloadResult {
   downloadsAllowed: boolean
 }
 
-export type ApiErrorCode = 'no_key' | 'bad_key' | 'not_found' | 'rate_limited' | 'downloads_not_allowed' | 'faceit_unreachable' | 'bad_request'
+export type ApiErrorCode =
+  | 'no_key'
+  | 'bad_key'
+  | 'not_found'
+  | 'rate_limited'
+  | 'downloads_not_allowed'
+  | 'faceit_unreachable'
+  | 'bad_request'
+  | 'ai_off'
+  | 'ai_bad_key'
+  | 'ai_no_model'
+  | 'ai_rate_limited'
+  | 'ai_unreachable'
+  | 'ai_failed'

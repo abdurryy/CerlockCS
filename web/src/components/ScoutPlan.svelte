@@ -3,6 +3,7 @@
   import { mapLabel } from '../lib/format'
   import { gamePlan, planText, type PlanLine, type Strength } from '../lib/scout/plan'
   import type { MapScout, Situation } from '../lib/scout/types'
+  import PlanWriteup from './PlanWriteup.svelte'
   import ScoutIcon from './ScoutIcon.svelte'
 
   // The game plan: what to do against them on each side and round type,
@@ -17,6 +18,7 @@
   let side = $state<'t' | 'ct'>('t')
   const shown = $derived(side === 't' ? plan.t : plan.ct)
   const count = $derived(plan.t.parts.reduce((n, p) => n + p.lines.length, 0) + plan.ct.parts.reduce((n, p) => n + p.lines.length, 0))
+  let writeup = $state(false)
   let copied = $state<'' | 'ok' | 'fail'>('')
   let timer: ReturnType<typeof setTimeout> | undefined
 
@@ -70,6 +72,10 @@
         What to do against {teamName || 'them'} on {mapLabel(scout.map)}, from what they did in {scout.ctRounds + scout.tRounds} rounds. Every line says what it is based on.
       </p>
     </div>
+    <div class="acts">
+    <button class="btn" onclick={() => (writeup = !writeup)} disabled={!count} aria-pressed={writeup} title="Have a language model write the plan up as a short text for your team">
+      <ScoutIcon name="pen" size={15} /><span>Write it up</span>
+    </button>
     <button class="btn" onclick={copy} disabled={!count} title="Copy the whole plan as text">
       {#if copied === 'ok'}
         <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
@@ -79,7 +85,12 @@
         <span>{copied === 'fail' ? 'Could not copy' : 'Copy plan'}</span>
       {/if}
     </button>
+    </div>
   </div>
+
+  {#if writeup}
+    <PlanWriteup {scout} {teamName} onclose={() => (writeup = false)} />
+  {/if}
 
   {#if !count}
     <p class="none faint">Nothing clear enough yet in {scout.ctRounds + scout.tRounds} rounds. More demos of this team on {mapLabel(scout.map)} will give a plan.</p>
@@ -165,6 +176,13 @@
   h5 {
     letter-spacing: 0.04em;
     color: var(--text-2);
+  }
+
+  .acts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    flex: none;
   }
 
   .btn {
