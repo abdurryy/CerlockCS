@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.3.7
+
+Round sheets and quicker videos.
+
+- Round sheet: one image per round type with a small map for every round, showing the whole route of each player, where they died, their kills and the plant. You can study it without playing anything. Save it from Watch with Save round sheet. Save all videos puts one next to every video, like `eco-rounds.png`
+- The video page lists the rounds under each video with won or lost and the site. Click one to jump to it, the one playing is marked
+- One by one, a round now stops a couple of seconds after the last of them dies instead of running on to the end of the round, so the videos are shorter
+- Names on the map show the gun the player is holding, next to the callout
+
+How to run it:
+
+- Windows: download `cerlock-windows-amd64.exe` and double click it. Windows may warn about an unknown publisher since the exe is not signed, click "More info" and then "Run anyway".
+- Linux and macOS: download the `.tar.gz` for your system, extract it and run `./cerlock`.
+
 ## v0.3.6
 
 More to read off every round, and all videos on one page.
