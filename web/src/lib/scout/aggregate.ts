@@ -7,6 +7,7 @@ import type { Callout, Site } from '../mapview'
 import { FLAG, loadReplay, prettyPlace, type Replay } from '../replay'
 import type { Kill, MapInfo, Player, Round } from '../types'
 import { EQ } from '../weapons'
+import { openingKill, trackFacts } from './facts'
 import { addRoles, finishRoles, RoleAcc } from './roles'
 import {
   AFTER_HIT,
@@ -483,17 +484,6 @@ function buyOf(r: Replay, i: number, team: number): string {
   return ''
 }
 
-// openingKill is the first kill of a round between the two teams.
-export function openingKill(kills: Kill[]): Kill | null {
-  let best: Kill | null = null
-  for (const k of kills) {
-    if (k.killer < 0 || k.killer === k.victim || k.killerSide === k.victimSide) continue
-    if (k.killerSide !== SIDE_T && k.killerSide !== SIDE_CT) continue
-    if (!best || k.tick < best.tick) best = k
-  }
-  return best
-}
-
 // ScoutBuilder adds replays one at a time and keeps only the totals.
 export class ScoutBuilder {
   readonly opts: ScoutOptions
@@ -752,6 +742,7 @@ export class ScoutBuilder {
     }
     const read = readRound(rc, this.opts)
     const track = buildTrack(rc, read, ctx.id, this.opts)
+    track.facts = trackFacts(rc, read)
     this.situationFor(acc, read.side, read.buy).add(rc, read, track)
     addRoles(ks.map((k) => ctx.roles[k]), rc, read, this.opts)
   }

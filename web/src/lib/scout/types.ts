@@ -218,6 +218,32 @@ export interface TrackEvent {
   headshot?: boolean
 }
 
+// TrackFacts is what a round says for the game plan, from this team's
+// side of it.
+export interface TrackFacts {
+  // Players in each part of the map at the setup moment, the ones who died
+  // before it where they died.
+  setup: Record<Zone, number>
+  // CT: who went into T territory early and where.
+  push?: { player: string; place: string }
+  // The first kill between the teams with one of this team in it: who,
+  // where they were, if they got the kill, when, and where the other
+  // player was.
+  opening?: { player: string; place: string; won: boolean; time: number; other: string }
+  // CT: after the T side got to a site, how many came over from elsewhere
+  // within ROTATE_SECONDS and when the first got there, in seconds after
+  // the hit, -1 when nobody did.
+  rotate?: { players: number; first: number }
+  // T: who was away from the rest at the hit and where.
+  lurk?: { player: string; place: string }
+  // Who had the AWP at the setup moment and where.
+  awp?: { player: string; place: string }
+  // Where the T side came from just before the hit.
+  entry?: string
+  // The site the bomb was planted on, '' for none.
+  plant: string
+}
+
 // SituationTrack is the start of one round, like "Match 2, round 13".
 // hit is the site the T side went for, '' when none, with hitTime in
 // seconds after freeze time (-1 when none).
@@ -239,6 +265,7 @@ export interface SituationTrack {
   events: TrackEvent[]
   // Callout names for TrackPlayer.place, '' for none.
   places?: string[]
+  facts?: TrackFacts
 }
 
 // Situation is every round of one side and buy, like T pistol rounds.
