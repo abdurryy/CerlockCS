@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.3.5
+
+One round at a time, so the videos are easy to follow.
+
+- One by one: the situation videos now play the rounds one after another on the whole map, with the player names on the map and a short title card for each round ("Round 3 of 6, Round 8, lost, T side hits A at 0:50"). It's the new default in Watch and in Save all videos
+- What happens: next to the map a list builds up as the round plays, like "0:36 FuRyy- died at Outside" or "0:58 Bomb planted on A site", with the callout from the demo
+- Routes: a faint line shows where every player walked since freeze time
+- Round by round videos play at 2x by default (1x and 1.5x too) and Save all videos splits them so none runs over 5 minutes
+- In Watch, one by one goes on to the next round by itself, with buttons for the previous and next round
+
+How to run it:
+
+- Windows: download `cerlock-windows-amd64.exe` and double click it. Windows may warn about an unknown publisher since the exe is not signed, click "More info" and then "Run anyway".
+- Linux and macOS: download the `.tar.gz` for your system, extract it and run `./cerlock`.
+
 ## v0.3.4
 
 Situation videos you can actually read.
