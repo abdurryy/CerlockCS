@@ -5,7 +5,10 @@
   import type { MapScout, Situation, SituationTrack } from '../lib/scout/types'
   import { Cancelled } from '../lib/scout/video'
   import {
+    COVER_NOTES,
+    COVER_PLAIN,
     DEFAULT_SPEED,
+    fightsOf,
     FPS,
     lengthSeconds,
     MAX_VIDEO_BYTES,
@@ -13,6 +16,8 @@
     renderVideo,
     roundLengths,
     sizeOf,
+    SLOW_AFTER,
+    SLOW_BEFORE,
     storyPlan,
     VIDEO_LAYOUTS,
     VIDEO_LENGTHS,
@@ -75,10 +80,12 @@
     return picked.every(Boolean) ? null : pickedList
   })
   const story = $derived<Story | undefined>(oneByOne && pickedCount ? { n: cur + 1, of: pickedCount } : undefined)
+  // One by one slows to real time around fights when it plays faster.
+  const fights = $derived(oneByOne && rounds && rounds.length === 1 && s.tracks[rounds[0]] ? fightsOf(s.tracks[rounds[0]]) : [])
   // As long as the longest of the picked rounds.
   const duration = $derived(overlay ? overlay.durationOf(rounds) : 30)
   const videoSecs = $derived(
-    !overlay ? 0 : oneByOne ? storyPlan(roundLengths(overlay, pickedList, lengthSeconds(length)), exportSpeed).total : videoLength(overlay, rounds, lengthSeconds(length)),
+    !overlay ? 0 : oneByOne ? storyPlan(roundLengths(overlay, pickedList, lengthSeconds(length)), exportSpeed, s.notes.length ? COVER_NOTES : COVER_PLAIN).total : videoLength(overlay, rounds, lengthSeconds(length)),
   )
   const step = $derived(overlay?.step ?? 0.25)
   const exporting = $derived(progress >= 0)
@@ -157,7 +164,8 @@
     let raf = requestAnimationFrame(function frame(now) {
       const dt = last ? Math.min(0.5, (now - last) / 1000) : 0
       last = now
-      const next = Math.min(duration, t + dt * speed)
+      const sp = speed > 1 && fights.some((f) => t >= f - SLOW_BEFORE && t <= f + SLOW_AFTER) ? 1 : speed
+      const next = Math.min(duration, t + dt * sp)
       t = next
       if (next >= duration) {
         // One by one goes on with the next round.
@@ -277,6 +285,9 @@
     } else if (e.key === 'Home') {
       e.preventDefault()
       seek(0)
+    } else if ((e.key === 'n' || e.key === 'p') && oneByOne && !exporting) {
+      e.preventDefault()
+      goRound(e.key === 'n' ? 1 : -1)
     }
   }
 
@@ -343,9 +354,9 @@
           </button>
           {#if oneByOne && pickedCount > 1}
             <span class="rnav">
-              <button class="plain" disabled={cur === 0 || exporting} title="Previous round" aria-label="Previous round" onclick={() => goRound(-1)}><Icon name="prev" size={14} /></button>
+              <button class="plain" disabled={cur === 0 || exporting} title="Previous round (P)" aria-label="Previous round" onclick={() => goRound(-1)}><Icon name="prev" size={14} /></button>
               <span class="num">Round {cur + 1}<span class="faint"> of {pickedCount}</span></span>
-              <button class="plain" disabled={cur >= pickedCount - 1 || exporting} title="Next round" aria-label="Next round" onclick={() => goRound(1)}><Icon name="next" size={14} /></button>
+              <button class="plain" disabled={cur >= pickedCount - 1 || exporting} title="Next round (N)" aria-label="Next round" onclick={() => goRound(1)}><Icon name="next" size={14} /></button>
             </span>
           {/if}
           <span class="clock num">{clockText(t)}<span class="faint"> / {clockText(duration)}</span></span>
@@ -483,7 +494,7 @@
           </section>
         {/if}
 
-        <p class="keys faint">Space plays and pauses. Arrows move 1 s, with Shift one frame. CS2 copies a command for the console that jumps to this moment, with the demo open in the game.</p>
+        <p class="keys faint">Space plays and pauses. Arrows move 1 s, with Shift one frame. One by one, N and P go to the next and previous round, and fights play at real speed. CS2 copies a command for the console that jumps to this moment, with the demo open in the game.</p>
       </aside>
     </div>
   </div>

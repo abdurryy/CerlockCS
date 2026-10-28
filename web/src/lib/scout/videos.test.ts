@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { lengthSeconds, pages, sizeOf, STORY_HOLD, STORY_INTRO, storyAt, storyPages, storyPlan, teamFolder, videoPath } from './videos'
+import { lengthSeconds, pages, sizeOf, SLOW_AFTER, SLOW_BEFORE, STORY_HOLD, STORY_INTRO, storyAt, storyPages, storyPlan, teamFolder, videoPath } from './videos'
 
 describe('videoPath', () => {
   it('puts each video in team, map and side folders', () => {
@@ -33,10 +33,9 @@ describe('storyPlan', () => {
 
   it('puts the rounds one after another with a title card each', () => {
     const plan = storyPlan(rounds, 2)
-    expect(plan.parts.map((p) => [p.round, p.start])).toEqual([
-      [2, 0],
-      [5, STORY_INTRO + 20 + STORY_HOLD],
-    ])
+    expect(plan.parts.map((p) => p.round)).toEqual([2, 5])
+    expect(plan.parts[0].start).toBe(0)
+    expect(plan.parts[1].start).toBeCloseTo(STORY_INTRO + 20 + STORY_HOLD)
     expect(plan.total).toBeCloseTo(2 * (STORY_INTRO + STORY_HOLD) + 20 + 45)
   })
 
@@ -46,7 +45,8 @@ describe('storyPlan', () => {
     expect(storyAt(plan, 0.5)).toMatchObject({ k: 0, t: 0 })
     expect(storyAt(plan, 0.5).intro).toBeGreaterThan(0.9)
     // Ten seconds in at twice the speed is 20 s of the round.
-    expect(storyAt(plan, STORY_INTRO + 10)).toEqual({ k: 0, t: 20, intro: 0 })
+    expect(storyAt(plan, STORY_INTRO + 10).k).toBe(0)
+    expect(storyAt(plan, STORY_INTRO + 10).t).toBeCloseTo(20)
     // The hold keeps the end of the round.
     expect(storyAt(plan, STORY_INTRO + 20 + 0.5)).toEqual({ k: 0, t: 40, intro: 0 })
     const second = plan.parts[1].start
@@ -54,6 +54,29 @@ describe('storyPlan', () => {
     expect(mid.k).toBe(1)
     expect(mid.t).toBeCloseTo(2)
     expect(storyAt(plan, plan.total + 5)).toEqual({ k: 1, t: 90, intro: 0 })
+  })
+
+  it('plays fights at real speed', () => {
+    const plain = storyPlan([{ round: 0, length: 60 }], 2)
+    const fight = storyPlan([{ round: 0, length: 60, fights: [30] }], 2)
+    // The four seconds around the fight take twice as long.
+    expect(fight.total - plain.total).toBeCloseTo((SLOW_BEFORE + SLOW_AFTER) / 2, 1)
+    // Real speed starts 1.5 s before the fight, at 28.5 s of the round.
+    const at = STORY_INTRO + (30 - SLOW_BEFORE) / 2
+    expect(storyAt(fight, at).t).toBeCloseTo(30 - SLOW_BEFORE, 1)
+    // From there a video second is a round second.
+    expect(storyAt(fight, at + 1).t).toBeCloseTo(31 - SLOW_BEFORE, 1)
+    // And the end of the round is still the end.
+    expect(storyAt(fight, fight.total - 0.1).t).toBeCloseTo(60, 5)
+  })
+
+  it('starts with the summary card', () => {
+    const plan = storyPlan(rounds, 2, 5)
+    expect(plan.parts[0].start).toBe(5)
+    expect(storyAt(plan, 2).cover).toBe(1)
+    expect(storyAt(plan, 2).t).toBe(0)
+    expect(storyAt(plan, 5.5).cover).toBeUndefined()
+    expect(storyAt(plan, 5.5).intro).toBeGreaterThan(0)
   })
 
   it('splits long sets into videos of at most five minutes', () => {

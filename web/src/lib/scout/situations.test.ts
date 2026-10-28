@@ -447,6 +447,14 @@ describe('buildTrack', () => {
     expect(p1.alive.every((a) => a === 1)).toBe(true)
   })
 
+  it('keeps the callout every player is at', async () => {
+    const { placeAt } = await import('./overlay')
+    const p1 = tr.players[1]
+    expect(placeAt(tr, p1, 0.125, 0)).toBe('T Spawn')
+    // T Spawn to T Left, then A Long and onto the site by 14 s.
+    expect(placeAt(tr, p1, 0.125, 15)).toBe('Bombsite A')
+  })
+
   it('stops at the end of the round', () => {
     expect(tr.end).toBe(30)
     // Rounds here last 50 s, so a longer window ends with the round.

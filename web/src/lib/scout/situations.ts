@@ -578,8 +578,11 @@ export function buildTrack(ctx: RoundCtx, read: RoundRead, replayId: string, opt
     const zs = new Float32Array(n)
     const yaws = new Float32Array(n)
     const alive = new Uint8Array(n)
+    const place = new Uint8Array(n)
     const base = p * F
     const hasYaw = r.pyaw.length > 0
+    const hasPlace = r.pplace.length > 0
+    let lp = 0
     let dead = false
     let lx = 0
     let ly = 0
@@ -592,6 +595,7 @@ export function buildTrack(ctx: RoundCtx, read: RoundRead, replayId: string, opt
       ly = bin.ry(r.py[base + f0])
       lz = r.pz[base + f0]
       if (hasYaw) lyaw = (r.pyaw[base + f0] / 65535) * 360
+      if (hasPlace) lp = r.pplace[base + f0]
     }
     for (let s = 0; s < n; s++) {
       if (!dead) {
@@ -616,6 +620,9 @@ export function buildTrack(ctx: RoundCtx, read: RoundRead, replayId: string, opt
           ly = bin.ry(y)
           lz = z
           lyaw = yaw
+          // An empty place keeps the last one, a corner between callouts
+          // has none.
+          if (hasPlace && r.pplace[j]) lp = r.pplace[j]
         } else dead = true
       }
       xs[s] = lx
@@ -623,8 +630,11 @@ export function buildTrack(ctx: RoundCtx, read: RoundRead, replayId: string, opt
       zs[s] = lz
       yaws[s] = lyaw
       alive[s] = dead ? 0 : 1
+      place[s] = lp
     }
-    return { steamId: ctx.ids[k], name: ctx.names[k], color: ctx.colors[k], xs, ys, zs, yaw: yaws, alive }
+    const out: TrackPlayer = { steamId: ctx.ids[k], name: ctx.names[k], color: ctx.colors[k], xs, ys, zs, yaw: yaws, alive }
+    if (hasPlace) out.place = place
+    return out
   })
   const until = Math.min(end, live + opts.trackSeconds * rate)
   const sec = (tick: number) => Math.max(0, (tick - live) / rate)
@@ -649,10 +659,14 @@ export function buildTrack(ctx: RoundCtx, read: RoundRead, replayId: string, opt
     const killer = name.get(k.killer)
     const victim = name.get(k.victim)
     const place = prettyPlace(k.victimPlace ?? '') || undefined
+    const fight = { weapon: k.weapon, headshot: k.headshot }
     if (killer && k.killer !== k.victim && k.killerSide !== k.victimSide) {
-      events.push({ t: sec(k.tick), kind: 'kill', x, y, z: k.victimPos[2], player: killer, from, place })
+      events.push({ t: sec(k.tick), kind: 'kill', x, y, z: k.victimPos[2], player: killer, from, place, other: r.playerName(k.victim), ...fight })
     }
-    if (victim) events.push({ t: sec(k.tick), kind: 'death', x, y, z: k.victimPos[2], player: victim, from, place })
+    if (victim) {
+      const by = k.killer >= 0 && k.killer !== k.victim ? (killer ?? r.playerName(k.killer)) : undefined
+      events.push({ t: sec(k.tick), kind: 'death', x, y, z: k.victimPos[2], player: victim, from, place, other: by, ...fight })
+    }
   }
   for (const e of r.roundBomb[i] ?? []) {
     if (e.kind !== 'planted' || e.tick < live || e.tick > until) continue
@@ -672,6 +686,7 @@ export function buildTrack(ctx: RoundCtx, read: RoundRead, replayId: string, opt
     rate,
     players: tp,
     events,
+    places: r.pplace.length ? r.places.map((pl) => prettyPlace(pl)) : undefined,
   }
 }
 

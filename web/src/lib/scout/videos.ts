@@ -1,7 +1,7 @@
 import { mapLabel } from '../format'
 import { MAX_ROUND_MAPS, type Overlay, type OverlayLayout, type OverlayOptions, type Story } from './overlay'
 import { slug } from './slug'
-import type { BuyKind, Situation } from './types'
+import type { BuyKind, Situation, SituationTrack } from './types'
 import { encodeVideo, type Video } from './video'
 
 // Situation videos: the sizes and lengths to pick from, and where each one
@@ -61,42 +61,89 @@ export const STORY_INTRO = 1.6
 export const STORY_HOLD = 1
 // A round by round video longer than this is split in parts.
 export const STORY_MAX = 300
+// Around a fight a round by round video drops to real time, from this
+// long before it to this long after, so the fight can be followed.
+export const SLOW_BEFORE = 1.5
+export const SLOW_AFTER = 2.5
+const TABLE_STEP = 0.1
 
-export interface StoryPart {
+export interface StoryRound {
   // Index into situation.tracks.
   round: number
-  // Video seconds where the part starts, and round seconds it shows.
-  start: number
+  // Round seconds shown.
   length: number
+  // Seconds of the kills and deaths in it.
+  fights?: number[]
+}
+
+export interface StoryPart extends StoryRound {
+  // Video seconds where the part starts.
+  start: number
+  // Video seconds after the title card, every TABLE_STEP of round time.
+  table: Float64Array
 }
 
 export interface StoryPlan {
   parts: StoryPart[]
   speed: number
   total: number
+  // Seconds of the summary card before the first round.
+  cover: number
 }
 
-function partSeconds(length: number, speed: number): number {
-  return STORY_INTRO + length / speed + STORY_HOLD
+// Seconds of the summary card at the start of a video, longer when it has
+// notes to read.
+export const COVER_PLAIN = 2.5
+export const COVER_NOTES = 5
+
+// fightsOf lists when the roster killed or died in a round.
+export function fightsOf(tr: SituationTrack): number[] {
+  return tr.events.filter((e) => e.kind === 'kill' || e.kind === 'death').map((e) => e.t)
 }
 
-// storyPlan lays rounds of these lengths one after another.
-export function storyPlan(rounds: { round: number; length: number }[], speed: number): StoryPlan {
+// timeTable maps round time to video time: speed most of the time, real
+// time around fights.
+function timeTable(r: StoryRound, speed: number): Float64Array {
+  const n = Math.max(1, Math.ceil(r.length / TABLE_STEP - 1e-9)) + 1
+  const out = new Float64Array(n)
+  const fights = r.fights ?? []
+  for (let i = 1; i < n; i++) {
+    const from = (i - 1) * TABLE_STEP
+    const dt = Math.min(TABLE_STEP, r.length - from)
+    const mid = from + dt / 2
+    const slow = speed > 1 && fights.some((f) => mid >= f - SLOW_BEFORE && mid <= f + SLOW_AFTER)
+    out[i] = out[i - 1] + dt / (slow ? 1 : speed)
+  }
+  return out
+}
+
+function partSeconds(table: Float64Array): number {
+  return STORY_INTRO + table[table.length - 1] + STORY_HOLD
+}
+
+// storyPlan lays rounds one after another, after cover seconds of
+// summary.
+export function storyPlan(rounds: StoryRound[], speed: number, cover = 0): StoryPlan {
   const sp = Math.max(0.25, speed)
   const parts: StoryPart[] = []
-  let at = 0
+  let at = cover
   for (const r of rounds) {
-    parts.push({ round: r.round, start: at, length: r.length })
-    at += partSeconds(r.length, sp)
+    const table = timeTable(r, sp)
+    parts.push({ ...r, start: at, table })
+    at += partSeconds(table)
   }
-  return { parts, speed: sp, total: at }
+  return { parts, speed: sp, total: at, cover }
 }
 
 // storyAt finds what a round by round video shows at video time at: the
 // part, the time in its round and how much of the title card is up.
-export function storyAt(plan: StoryPlan, at: number): { k: number; t: number; intro: number } {
+export function storyAt(plan: StoryPlan, at: number): { k: number; t: number; intro: number; cover?: number } {
   const ps = plan.parts
   if (!ps.length) return { k: -1, t: 0, intro: 0 }
+  if (at < plan.cover) {
+    const cover = Math.min(1, at / 0.2, (plan.cover - at) / 0.5)
+    return { k: 0, t: 0, intro: 0, cover: Math.max(0, cover) }
+  }
   let k = ps.length - 1
   for (let i = 1; i < ps.length; i++) {
     if (ps[i].start > at) {
@@ -111,17 +158,32 @@ export function storyAt(plan: StoryPlan, at: number): { k: number; t: number; in
     const intro = Math.min(1, local / 0.15, (STORY_INTRO - local) / 0.5)
     return { k, t: 0, intro: Math.max(0, intro) }
   }
-  return { k, t: Math.min(p.length, (local - STORY_INTRO) * plan.speed), intro: 0 }
+  const v = local - STORY_INTRO
+  const tb = p.table
+  if (v >= tb[tb.length - 1]) return { k, t: p.length, intro: 0 }
+  // The first table entry past v, then between it and the one before.
+  let lo = 1
+  let hi = tb.length - 1
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (tb[mid] > v) hi = mid
+    else lo = mid + 1
+  }
+  const from = (lo - 1) * TABLE_STEP
+  const span = tb[lo] - tb[lo - 1]
+  const dt = Math.min(TABLE_STEP, p.length - from)
+  const t = from + (span > 0 ? ((v - tb[lo - 1]) / span) * dt : 0)
+  return { k, t: Math.min(p.length, t), intro: 0 }
 }
 
 // storyPages splits rounds into round by round videos of at most max
 // seconds each, every video with at least one round.
-export function storyPages(rounds: { round: number; length: number }[], speed: number, max = STORY_MAX): { round: number; length: number }[][] {
-  const out: { round: number; length: number }[][] = []
-  let cur: { round: number; length: number }[] = []
+export function storyPages(rounds: StoryRound[], speed: number, max = STORY_MAX): StoryRound[][] {
+  const out: StoryRound[][] = []
+  let cur: StoryRound[] = []
   let secs = 0
   for (const r of rounds) {
-    const s = partSeconds(r.length, Math.max(0.25, speed))
+    const s = partSeconds(timeTable(r, Math.max(0.25, speed)))
     if (cur.length && secs + s > max) {
       out.push(cur)
       cur = []
@@ -136,10 +198,11 @@ export function storyPages(rounds: { round: number; length: number }[], speed: n
 
 // roundLengths is how long each of these rounds is on screen, cut at
 // seconds when that is set.
-export function roundLengths(o: Overlay, rounds: readonly number[], seconds: number): { round: number; length: number }[] {
+export function roundLengths(o: Overlay, rounds: readonly number[], seconds: number): StoryRound[] {
   return rounds.map((i) => {
     const full = o.durationOf([i])
-    return { round: i, length: seconds > 0 ? Math.min(seconds, full) : full }
+    const tr = o.situation.tracks[i]
+    return { round: i, length: seconds > 0 ? Math.min(seconds, full) : full, fights: tr ? fightsOf(tr) : [] }
   })
 }
 
@@ -193,7 +256,8 @@ export async function renderStory(
   signal?: AbortSignal,
 ): Promise<Video> {
   await o.prepare(size.w, size.h)
-  const plan = storyPlan(roundLengths(o, rounds, seconds), speed)
+  const cover = o.situation.notes.length ? COVER_NOTES : COVER_PLAIN
+  const plan = storyPlan(roundLengths(o, rounds, seconds), speed, cover)
   // One set of options per round, the overlay keys its cache on them.
   const views: OverlayOptions[] = plan.parts.map((p, k) => {
     const story: Story = { n: k + 1, of: plan.parts.length }
@@ -205,8 +269,10 @@ export async function renderStory(
     fps: FPS,
     duration: plan.total,
     draw: (c, at) => {
-      const { k, t, intro } = storyAt(plan, at)
-      if (k >= 0) o.draw(c, t, intro > 0 ? { ...views[k], intro } : views[k])
+      const { k, t, intro, cover } = storyAt(plan, at)
+      if (k < 0) return
+      if (cover) o.draw(c, t, { ...views[k], cover })
+      else o.draw(c, t, intro > 0 ? { ...views[k], intro } : views[k])
     },
     onprogress,
     signal,

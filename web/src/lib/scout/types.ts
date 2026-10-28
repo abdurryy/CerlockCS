@@ -190,6 +190,8 @@ export interface TrackPlayer {
   // Where they look, in degrees like the game: 0 is +x, 90 is +y.
   yaw: Float32Array
   alive: Uint8Array
+  // The callout they are at, an index into SituationTrack.places.
+  place?: Uint8Array
 }
 
 // TrackEvent is something that happened in a track, t seconds after
@@ -207,6 +209,11 @@ export interface TrackEvent {
   from?: [number, number]
   // The callout it happened at, for kills, deaths and the plant.
   place?: string
+  // Kills and deaths: the other player (the victim of a kill, the killer
+  // of a death), the weapon and whether it was a headshot.
+  other?: string
+  weapon?: number
+  headshot?: boolean
 }
 
 // SituationTrack is the start of one round, like "Match 2, round 13".
@@ -228,6 +235,8 @@ export interface SituationTrack {
   rate: number
   players: TrackPlayer[]
   events: TrackEvent[]
+  // Callout names for TrackPlayer.place, '' for none.
+  places?: string[]
 }
 
 // Situation is every round of one side and buy, like T pistol rounds.

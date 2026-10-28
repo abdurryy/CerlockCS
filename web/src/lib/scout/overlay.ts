@@ -6,7 +6,7 @@
 
 import { ACCENT, BAD, BG, GOOD, TEXT, TEXT_2, teamColor } from '../colors'
 import { mapLabel } from '../format'
-import { drawIcon } from '../icons.svelte'
+import { drawIcon, iconBitmap, weaponIcon } from '../icons.svelte'
 import { FONT, circle, flameSprite, roundRect, setSpacing, smokeSprite } from '../render/draw'
 import { lerpAngle } from '../replay'
 import type { MapInfo } from '../types'
@@ -63,6 +63,8 @@ export interface OverlayOptions {
   story?: Story
   // How much of the round's title card covers the map, 0 to 1.
   intro?: number
+  // How much of the video's summary card covers the map, 0 to 1.
+  cover?: number
 }
 
 export interface Story {
@@ -182,6 +184,14 @@ export function lengthOf(list: readonly SituationTrack[], max: number): number {
   return Math.max(1, Math.min(max, Math.ceil(longest - 1e-6)))
 }
 
+// placeAt is the callout a player is at, at t seconds, '' when the demo
+// has none.
+export function placeAt(tr: SituationTrack, p: TrackPlayer, step: number, t: number): string {
+  if (!p.place || !tr.places) return ''
+  const i = Math.max(0, Math.min(p.place.length - 1, Math.round(t / step)))
+  return tr.places[p.place[i]] ?? ''
+}
+
 // rgba turns '#rrggbb' into a colour with alpha.
 function rgba(hex: string, a: number): string {
   const n = parseInt(hex.slice(1, 7), 16)
@@ -268,8 +278,27 @@ interface Layout {
 interface FeedLine {
   t: number
   color: string
-  text: string
-  bad?: boolean
+  // Plain lines, like the plant.
+  text?: string
+  // Killfeed lines: a [icon] b, with which of them is ours.
+  a?: string
+  b?: string
+  ours?: 'a' | 'b'
+  icon?: string | null
+  headshot?: boolean
+  place?: string
+  // Utility is drawn quieter.
+  dim?: boolean
+}
+
+// feedText writes a line of the list as one sentence, for the footer of
+// the square frame.
+function feedText(l: FeedLine): string {
+  if (l.text) return l.text
+  const at = l.place ? ` at ${l.place}` : ''
+  if (l.dim) return `${l.a}: ${l.icon === 'weapon/smokegrenade' ? 'smoke' : 'molotov'}${at}`
+  if (l.ours === 'a') return `${l.a} killed ${l.b}${at}`
+  return l.a ? `${l.b} killed by ${l.a}${at}` : `${l.b} died${at}`
 }
 
 // Cell is what one map of a grid is for.
@@ -413,7 +442,15 @@ export class Overlay {
 
   static async create(scout: MapScout, situation: Situation, opts: { teamName?: string } = {}): Promise<Overlay> {
     const labels = scoutLabels(scout) ?? { callouts: [], sites: [] }
-    const [stage] = await Promise.all([stageFor(scout.info, labels, [situation.heat20, scout.team.ct, scout.team.t]), assetsAt(60, ['hud/dead', 'weapon/c4'])])
+    // The weapons of the kills, for the list of what happens.
+    const guns = new Set<string>()
+    for (const tr of situation.tracks) {
+      for (const e of tr.events) {
+        const icon = e.weapon !== undefined ? weaponIcon(e.weapon) : null
+        if (icon) guns.add(icon)
+      }
+    }
+    const [stage] = await Promise.all([stageFor(scout.info, labels, [situation.heat20, scout.team.ct, scout.team.t]), assetsAt(60, ['hud/dead', 'weapon/c4', 'weapon/smokegrenade', 'weapon/molotov', 'weapon/incgrenade', 'kill/headshot', ...guns])])
     return new Overlay(scout, situation, stage, opts.teamName?.trim() ?? '', labels)
   }
 
@@ -524,6 +561,57 @@ export class Overlay {
     this.drawClock(ctx, L, time)
     if (opts.story && vis.length === 1) this.drawFeed(ctx, L, vis[0], time)
     if (opts.story && opts.intro && opts.intro > 0 && vis.length === 1) this.drawIntro(ctx, L, vis[0], opts.story, opts.intro)
+    if (opts.cover && opts.cover > 0) this.drawCover(ctx, L, opts.cover)
+  }
+
+  // drawCover is the summary at the start of a round by round video: how
+  // the rounds went and the strongest patterns in them.
+  private drawCover(ctx: CanvasRenderingContext2D, L: Layout, a: number) {
+    const { u } = L
+    const m = L.map
+    const s = this.situation
+    ctx.globalAlpha = a
+    ctx.fillStyle = 'rgba(11,13,17,0.86)'
+    ctx.fillRect(m.x - 24 * u, m.y - 24 * u, m.w + 48 * u, m.h + 48 * u)
+    const w = Math.min(m.w - 80 * u, 900 * u)
+    const x = m.x + (m.w - w) / 2
+    const notes = s.notes.slice(0, 3)
+    font(ctx, 500, 22, u, 0, FONT)
+    const lines = notes.map((n) => wrap(ctx, n, w - 28 * u, 3))
+    const textH = lines.reduce((h, l) => h + l.length * 32 * u + 14 * u, 0)
+    let y = m.y + Math.max(40 * u, (m.h - (150 * u + textH)) / 2)
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'alphabetic'
+    font(ctx, 600, 18, u, 0.16)
+    ctx.fillStyle = TEXT_3
+    ctx.fillText('IN THIS VIDEO', x, y)
+    y += 58 * u
+    font(ctx, 700, 52, u, -0.005)
+    ctx.fillStyle = TEXT
+    ctx.fillText(fitText(ctx, s.title, w), x, y)
+    y += 44 * u
+    font(ctx, 600, 24, u, 0.01)
+    const matches = new Set(s.tracks.map((t) => t.replayId)).size
+    const head = `${plural(s.tracks.length, 'round')}   ·   ${plural(matches, 'match')}   ·   `
+    ctx.fillStyle = TEXT_2
+    ctx.fillText(head, x, y)
+    ctx.fillStyle = s.won * 2 >= s.rounds ? GOOD : BAD
+    ctx.fillText(`won ${s.won} of ${s.rounds}`, x + ctx.measureText(head).width, y)
+    y += 48 * u
+    font(ctx, 500, 22, u, 0, FONT)
+    for (const l of lines) {
+      ctx.fillStyle = ACCENT
+      circle(ctx, x + 6 * u, y - 8 * u, 4 * u)
+      ctx.fill()
+      ctx.fillStyle = TEXT
+      for (const ln of l) {
+        ctx.fillText(ln, x + 28 * u, y)
+        y += 32 * u
+      }
+      y += 14 * u
+    }
+    ctx.globalAlpha = 1
+    setSpacing(ctx, '0px')
   }
 
   // ---- Round by round ----
@@ -531,18 +619,36 @@ export class Overlay {
   private feeds = new Map<PTrack, FeedLine[]>()
 
   // feedOf lists what happens in a round, for the side column: kills,
-  // deaths, the site hit and the plant, with where they happened.
+  // deaths, smokes and molotovs, the site hit and the plant, with where
+  // they happened.
   private feedOf(tr: PTrack): FeedLine[] {
     let out = this.feeds.get(tr)
     if (out) return out
     out = []
     // The demo's own callout when it has one, else the nearest label.
+    const placeOf = (e: TrackEvent) => e.place || nearestPlace(this.labels, e.x, e.y, levelOf(this.scout.info, e.z))
     const at = (e: TrackEvent) => {
-      const place = e.place || nearestPlace(this.labels, e.x, e.y, levelOf(this.scout.info, e.z))
+      const place = placeOf(e)
       return place ? ` at ${place}` : ''
     }
-    for (const ev of tr.kills) out.push({ t: ev.e.t, color: ev.color, text: `${ev.e.player} got a kill${at(ev.e)}` })
-    for (const ev of tr.deaths) if (ev.id) out.push({ t: ev.e.t, color: ev.color, text: `${ev.e.player} died${at(ev.e)}`, bad: true })
+    const ours = this.situation.side === 'ct' ? 3 : 2
+    const theirs = ours === 3 ? 2 : 3
+    // Kills read like the game's killfeed: killer, weapon, victim.
+    for (const ev of tr.kills) {
+      const e = ev.e
+      out.push({ t: e.t, color: ev.color, a: e.player, b: e.other ?? 'enemy', ours: 'a', icon: e.weapon !== undefined ? weaponIcon(e.weapon, ours) : null, headshot: e.headshot, place: placeOf(e) })
+    }
+    for (const ev of tr.deaths) {
+      if (!ev.id) continue
+      const e = ev.e
+      out.push({ t: e.t, color: ev.color, a: e.other ?? '', b: e.player, ours: 'b', icon: e.weapon !== undefined ? weaponIcon(e.weapon, theirs) : null, headshot: e.headshot, place: placeOf(e) })
+    }
+    // Smokes and molotovs shape a round, flashes are too many to list.
+    for (const ev of tr.areas) {
+      const e = ev.e
+      if (!ev.id) continue
+      out.push({ t: e.t, color: ev.color, a: e.player, ours: 'a', icon: e.kind === 'smoke' ? 'weapon/smokegrenade' : 'weapon/molotov', place: placeOf(e), dim: true })
+    }
     for (const ev of tr.plants) out.push({ t: ev.e.t, color: ACCENT, text: ev.e.place ? `Bomb planted on ${ev.e.place}` : `Bomb planted${at(ev.e)}` })
     const t = tr.track
     if (t.hit && t.hitTime >= 0) out.push({ t: t.hitTime, color: TEXT_3, text: this.situation.side === 't' ? `They hit ${t.hit}` : `T side hits ${t.hit}` })
@@ -565,7 +671,7 @@ export class Overlay {
       ctx.fillStyle = TEXT_3
       ctx.fillText(clockText(last.t), 72 * u, h - 56 * u)
       ctx.fillStyle = TEXT
-      ctx.fillText(fitText(ctx, last.text, L.w - 220 * u), 132 * u, h - 56 * u)
+      ctx.fillText(fitText(ctx, feedText(last), L.w - 220 * u), 132 * u, h - 56 * u)
       return
     }
     const x0 = 64 * u
@@ -592,9 +698,40 @@ export class Overlay {
       ctx.fillStyle = l.color
       circle(ctx, x0 + 64 * u, y - 6 * u, 5.5 * u)
       ctx.fill()
-      font(ctx, 500, 19, u, 0, FONT)
-      ctx.fillStyle = l.bad ? TEXT_2 : TEXT
-      ctx.fillText(fitText(ctx, l.text, colW - 80 * u), x0 + 80 * u, y)
+      const right = x0 + colW
+      let x = x0 + 80 * u
+      font(ctx, l.dim ? 500 : 600, l.dim ? 17 : 19, u, 0, l.dim ? FONT : undefined)
+      if (l.text) {
+        ctx.fillStyle = TEXT
+        ctx.fillText(fitText(ctx, l.text, right - x), x, y)
+      } else {
+        // Ours in white, theirs in grey.
+        const name = (s: string | undefined, mine: boolean) => {
+          if (!s) return
+          ctx.fillStyle = l.dim ? TEXT_2 : mine ? TEXT : TEXT_2
+          const txt = fitText(ctx, s, 150 * u)
+          ctx.fillText(txt, x, y)
+          x += ctx.measureText(txt).width + 8 * u
+        }
+        name(l.a, l.ours === 'a')
+        const ih = 15 * u
+        const bm = l.icon ? iconBitmap(l.icon, null, ih) : null
+        if (bm) {
+          const iw = (bm.width / bm.height) * ih
+          drawIcon(ctx, l.icon!, x + iw / 2, y - 6 * u, ih, l.dim ? TEXT_3 : TEXT_2)
+          x += iw + 6 * u
+        }
+        if (l.headshot) {
+          drawIcon(ctx, 'kill/headshot', x + 7 * u, y - 6 * u, 14 * u, TEXT_2)
+          x += 20 * u
+        }
+        name(l.b, l.ours === 'b')
+      }
+      if (l.place && x < right - 30 * u) {
+        font(ctx, 500, 16, u, 0, FONT)
+        ctx.fillStyle = TEXT_3
+        ctx.fillText(fitText(ctx, l.place, right - x), x, y)
+      }
     })
     ctx.globalAlpha = 1
     setSpacing(ctx, '0px')
@@ -1559,9 +1696,19 @@ export class Overlay {
       ctx.globalAlpha = (hi && pp.p.steamId !== hi ? FADED : 1) * where.a * (pt[3] ? 1 : 0.6)
       ctx.lineWidth = 3.5 * u
       ctx.strokeStyle = 'rgba(11,13,17,0.85)'
+      font(ctx, 600, 15, u, 0.02)
       ctx.strokeText(pp.p.name, x, y)
       ctx.fillStyle = TEXT
       ctx.fillText(pp.p.name, x, y)
+      // Where they are, from the demo, while they are alive.
+      const place = pt[3] ? placeAt(tr.track, pp.p, this.step, t) : ''
+      if (place) {
+        const nx = x + ctx.measureText(pp.p.name).width + 6 * u
+        font(ctx, 500, 13, u, 0.02)
+        ctx.strokeText(place, nx, y + 0.5 * u)
+        ctx.fillStyle = TEXT_2
+        ctx.fillText(place, nx, y + 0.5 * u)
+      }
     }
     ctx.globalAlpha = 1
     ctx.textBaseline = 'alphabetic'
