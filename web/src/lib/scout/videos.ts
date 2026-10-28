@@ -1,5 +1,5 @@
 import { mapLabel } from '../format'
-import { MAX_ROUND_MAPS, type Overlay, type OverlayLayout, type OverlayOptions } from './overlay'
+import { MAX_ROUND_MAPS, type Overlay, type OverlayLayout, type OverlayOptions, type Story } from './overlay'
 import { slug } from './slug'
 import type { BuyKind, Situation } from './types'
 import { encodeVideo, type Video } from './video'
@@ -29,30 +29,118 @@ export const VIDEO_LENGTHS = [
 
 export const FPS = 30
 
-export type LayoutChoice = 'auto' | OverlayLayout
+// 'story' plays the rounds one after another, each on the whole map with
+// what happens in it listed next to it. The others play all rounds at once.
+export type VideoLayout = 'story' | OverlayLayout
 
-export const VIDEO_LAYOUTS: { id: LayoutChoice; label: string; title: string }[] = [
-  { id: 'auto', label: 'Auto', title: `A map per round up to ${MAX_ROUND_MAPS} rounds, a map per player with more` },
+export const VIDEO_LAYOUTS: { id: VideoLayout; label: string; title: string }[] = [
+  { id: 'story', label: 'One by one', title: 'One round after another on the whole map, with what happens in it' },
   { id: 'rounds', label: 'Map per round', title: 'Every round on a map of its own, all playing at once' },
   { id: 'players', label: 'Map per player', title: 'Each player on a map of their own, plus one with everyone' },
   { id: 'together', label: 'One map', title: 'Everyone on one map, the dots carry the round number' },
 ]
 
-// layoutOf picks the layout for a video of this many rounds: a round on
-// its own needs one map, up to MAX_ROUND_MAPS rounds read best side by
-// side, more than that by player.
-export function layoutOf(choice: LayoutChoice, rounds: number): OverlayLayout {
-  if (choice !== 'auto') return choice
-  if (rounds <= 1) return 'together'
-  return rounds <= MAX_ROUND_MAPS ? 'rounds' : 'players'
-}
+// Speeds for round by round videos. Twice as fast keeps them short and
+// still easy to follow.
+export const VIDEO_SPEEDS = [1, 1.5, 2]
+export const DEFAULT_SPEED = 2
 
 // pages splits rounds into groups that fit a map per round.
-export function pages(rounds: number[], layout: OverlayLayout): number[][] {
+export function pages(rounds: number[], layout: VideoLayout): number[][] {
   if (layout !== 'rounds' || rounds.length <= MAX_ROUND_MAPS) return [rounds]
   const out: number[][] = []
   for (let i = 0; i < rounds.length; i += MAX_ROUND_MAPS) out.push(rounds.slice(i, i + MAX_ROUND_MAPS))
   return out
+}
+
+// ---- Round by round ----
+
+// Seconds of each round's title card, and of the end of the round held
+// before the next one.
+export const STORY_INTRO = 1.6
+export const STORY_HOLD = 1
+// A round by round video longer than this is split in parts.
+export const STORY_MAX = 300
+
+export interface StoryPart {
+  // Index into situation.tracks.
+  round: number
+  // Video seconds where the part starts, and round seconds it shows.
+  start: number
+  length: number
+}
+
+export interface StoryPlan {
+  parts: StoryPart[]
+  speed: number
+  total: number
+}
+
+function partSeconds(length: number, speed: number): number {
+  return STORY_INTRO + length / speed + STORY_HOLD
+}
+
+// storyPlan lays rounds of these lengths one after another.
+export function storyPlan(rounds: { round: number; length: number }[], speed: number): StoryPlan {
+  const sp = Math.max(0.25, speed)
+  const parts: StoryPart[] = []
+  let at = 0
+  for (const r of rounds) {
+    parts.push({ round: r.round, start: at, length: r.length })
+    at += partSeconds(r.length, sp)
+  }
+  return { parts, speed: sp, total: at }
+}
+
+// storyAt finds what a round by round video shows at video time at: the
+// part, the time in its round and how much of the title card is up.
+export function storyAt(plan: StoryPlan, at: number): { k: number; t: number; intro: number } {
+  const ps = plan.parts
+  if (!ps.length) return { k: -1, t: 0, intro: 0 }
+  let k = ps.length - 1
+  for (let i = 1; i < ps.length; i++) {
+    if (ps[i].start > at) {
+      k = i - 1
+      break
+    }
+  }
+  const p = ps[k]
+  const local = Math.max(0, at - p.start)
+  if (local < STORY_INTRO) {
+    // Fades in fast and out over the last half second.
+    const intro = Math.min(1, local / 0.15, (STORY_INTRO - local) / 0.5)
+    return { k, t: 0, intro: Math.max(0, intro) }
+  }
+  return { k, t: Math.min(p.length, (local - STORY_INTRO) * plan.speed), intro: 0 }
+}
+
+// storyPages splits rounds into round by round videos of at most max
+// seconds each, every video with at least one round.
+export function storyPages(rounds: { round: number; length: number }[], speed: number, max = STORY_MAX): { round: number; length: number }[][] {
+  const out: { round: number; length: number }[][] = []
+  let cur: { round: number; length: number }[] = []
+  let secs = 0
+  for (const r of rounds) {
+    const s = partSeconds(r.length, Math.max(0.25, speed))
+    if (cur.length && secs + s > max) {
+      out.push(cur)
+      cur = []
+      secs = 0
+    }
+    cur.push(r)
+    secs += s
+  }
+  if (cur.length) out.push(cur)
+  return out
+}
+
+// roundLengths is how long each of these rounds is on screen, cut at
+// seconds when that is set.
+export function roundLengths(o: Overlay, rounds: readonly number[], seconds: number): { round: number; length: number }[] {
+  return rounds.map((i) => {
+    const full = o.durationOf([i])
+    return { round: i, length: seconds > 0 ? Math.min(seconds, full) : full }
+  })
 }
 
 // Every video stays under 20 MB, long ones get a lower bitrate.
@@ -91,6 +179,39 @@ export function videoPath(teamName: string, map: string, s: Pick<Situation, 'sid
 export function videoLength(o: Overlay, rounds: readonly number[] | null | undefined, seconds: number): number {
   const full = o.durationOf(rounds)
   return seconds > 0 ? Math.min(seconds, full) : full
+}
+
+// renderStory draws and encodes rounds one after another.
+export async function renderStory(
+  o: Overlay,
+  opts: OverlayOptions,
+  rounds: readonly number[],
+  size: VideoSize,
+  seconds: number,
+  speed: number,
+  onprogress?: (done: number) => void,
+  signal?: AbortSignal,
+): Promise<Video> {
+  await o.prepare(size.w, size.h)
+  const plan = storyPlan(roundLengths(o, rounds, seconds), speed)
+  // One set of options per round, the overlay keys its cache on them.
+  const views: OverlayOptions[] = plan.parts.map((p, k) => {
+    const story: Story = { n: k + 1, of: plan.parts.length }
+    return { ...opts, layout: 'together', rounds: [p.round], story, length: seconds > 0 ? seconds : undefined }
+  })
+  return encodeVideo({
+    width: size.w,
+    height: size.h,
+    fps: FPS,
+    duration: plan.total,
+    draw: (c, at) => {
+      const { k, t, intro } = storyAt(plan, at)
+      if (k >= 0) o.draw(c, t, intro > 0 ? { ...views[k], intro } : views[k])
+    },
+    onprogress,
+    signal,
+    maxBytes: MAX_VIDEO_BYTES,
+  })
 }
 
 // renderVideo draws and encodes one situation the way it is set up in

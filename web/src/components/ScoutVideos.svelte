@@ -2,10 +2,28 @@
   import { exportFolder, openExport, saveExport } from '../lib/api'
   import { mapLabel } from '../lib/format'
   import { scoutOptions } from '../lib/scout/aggregate'
-  import { clockText, lengthOf, Overlay, type OverlayLayout } from '../lib/scout/overlay'
+  import { clockText, lengthOf, Overlay } from '../lib/scout/overlay'
   import type { MapScout, Situation } from '../lib/scout/types'
   import { Cancelled, targetBitrate } from '../lib/scout/video'
-  import { FPS, layoutOf, lengthSeconds, MAX_VIDEO_BYTES, pages, renderVideo, sizeOf, teamFolder, VIDEO_LAYOUTS, VIDEO_LENGTHS, VIDEO_SIZES, videoPath, type LayoutChoice } from '../lib/scout/videos'
+  import {
+    DEFAULT_SPEED,
+    FPS,
+    lengthSeconds,
+    MAX_VIDEO_BYTES,
+    pages,
+    renderStory,
+    renderVideo,
+    sizeOf,
+    storyPages,
+    storyPlan,
+    teamFolder,
+    VIDEO_LAYOUTS,
+    VIDEO_LENGTHS,
+    VIDEO_SIZES,
+    VIDEO_SPEEDS,
+    videoPath,
+    type VideoLayout,
+  } from '../lib/scout/videos'
   import Icon from './Icon.svelte'
   import ScoutIcon from './ScoutIcon.svelte'
 
@@ -18,7 +36,7 @@
     key: string
     scout: MapScout
     s: Situation
-    layout: OverlayLayout
+    layout: VideoLayout
     // The rounds in this video, null for all of them. A map per round with
     // many rounds is split over several videos, part says which rounds.
     rounds: number[] | null
@@ -34,7 +52,8 @@
 
   let size = $state('1080')
   let length = $state('round')
-  let layout = $state<LayoutChoice>('auto')
+  let layout = $state<VideoLayout>('story')
+  let speed = $state(DEFAULT_SPEED)
   let skip = $state<Record<string, boolean>>({})
   let done = $state<Record<string, Done>>({})
   let running = $state(false)
@@ -54,8 +73,21 @@
       const cut = lengthSeconds(length)
       return m.situations
         .filter((s) => s.tracks.length)
-        .flatMap((s) => {
-          const lay = layoutOf(layout, s.tracks.length)
+        .flatMap((s): Item[] => {
+          const lay = layout
+          const part = (pg: number[], split: boolean) => (split ? { from: pg[0] + 1, to: pg[pg.length - 1] + 1 } : undefined)
+          if (lay === 'story') {
+            // One after another, split so no video runs over five minutes.
+            const lens = s.tracks.map((tr, i) => {
+              const full = lengthOf([tr], max)
+              return { round: i, length: cut > 0 ? Math.min(cut, full) : full }
+            })
+            const groups = storyPages(lens, speed)
+            return groups.map((g, n) => {
+              const pg = g.map((r) => r.round)
+              return { key: `${m.map}/${s.key}/${n}`, scout: m, s, layout: lay, rounds: pg, part: part(pg, groups.length > 1), secs: storyPlan(g, speed).total }
+            })
+          }
           const parts = pages(
             s.tracks.map((_, i) => i),
             lay,
@@ -72,7 +104,7 @@
               s,
               layout: lay,
               rounds: split ? pg : null,
-              part: split ? { from: pg[0] + 1, to: pg[pg.length - 1] + 1 } : undefined,
+              part: part(pg, split),
               secs: cut > 0 ? Math.min(cut, full) : full,
             }
           })
@@ -141,20 +173,17 @@
       done = { ...done, [it.key]: { stage: 'making' } }
       try {
         const o = await Overlay.create(it.scout, it.s, { teamName })
-        const v = await renderVideo(
-          o,
-          { layout: it.layout, rounds: it.rounds },
-          sz,
-          cut,
-          (p) => {
-            progress = p
-            // Time left from how fast the video seconds so far went.
-            const did = secsDone + p * it.secs
-            const spent = (performance.now() - t0) / 1000
-            if (spent > 5 && did > 0) left = minutes(((all - did) * spent) / did)
-          },
-          signal,
-        )
+        const onp = (p: number) => {
+          progress = p
+          // Time left from how fast the video seconds so far went.
+          const did = secsDone + p * it.secs
+          const spent = (performance.now() - t0) / 1000
+          if (spent > 5 && did > 0) left = minutes(((all - did) * spent) / did)
+        }
+        const v =
+          it.layout === 'story'
+            ? await renderStory(o, {}, it.rounds ?? it.s.tracks.map((_, i) => i), sz, cut, speed, onp, signal)
+            : await renderVideo(o, { layout: it.layout, rounds: it.rounds }, sz, cut, onp, signal)
         const path = videoPath(teamName, it.scout.map, it.s, v.ext, it.part)
         await saveExport(path, v.blob)
         done = { ...done, [it.key]: { stage: 'saved', path } }
@@ -260,6 +289,16 @@
             {/each}
           </div>
         </div>
+        {#if layout === 'story'}
+          <div class="field">
+            <span class="label">Speed</span>
+            <div class="seg" role="group" aria-label="Speed">
+              {#each VIDEO_SPEEDS as sp (sp)}
+                <button class:on={speed === sp} aria-pressed={speed === sp} disabled={running} onclick={() => (speed = sp)}>{sp}x</button>
+              {/each}
+            </div>
+          </div>
+        {/if}
         <span class="spacer"></span>
         {#if running}
           <button class="btn" onclick={cancel}>Cancel</button>

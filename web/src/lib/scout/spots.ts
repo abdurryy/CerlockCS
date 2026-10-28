@@ -66,7 +66,7 @@ function meanYaw(list: number[]): number | null {
   return (Math.atan2(s, c) * 180) / Math.PI
 }
 
-function nearestPlace(labels: MapLabels | undefined, rx: number, ry: number, level: number): string {
+export function nearestPlace(labels: MapLabels | undefined, rx: number, ry: number, level: number): string {
   let best = ''
   let bd = Infinity
   for (const c of labels?.callouts ?? []) {

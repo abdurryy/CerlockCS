@@ -1,17 +1,34 @@
 <script lang="ts">
   import { copyText } from '../lib/clipboard'
   import { mapLabel } from '../lib/format'
-  import { clockText, hitMarks, MAX_ROUND_MAPS, Overlay, type FloorMode, type OverlayLayout, type OverlayOptions } from '../lib/scout/overlay'
+  import { clockText, hitMarks, MAX_ROUND_MAPS, Overlay, type FloorMode, type OverlayOptions, type Story } from '../lib/scout/overlay'
   import type { MapScout, Situation, SituationTrack } from '../lib/scout/types'
   import { Cancelled } from '../lib/scout/video'
-  import { FPS, layoutOf, lengthSeconds, MAX_VIDEO_BYTES, renderVideo, sizeOf, VIDEO_LENGTHS, VIDEO_SIZES, videoLength } from '../lib/scout/videos'
+  import {
+    DEFAULT_SPEED,
+    FPS,
+    lengthSeconds,
+    MAX_VIDEO_BYTES,
+    renderStory,
+    renderVideo,
+    roundLengths,
+    sizeOf,
+    storyPlan,
+    VIDEO_LAYOUTS,
+    VIDEO_LENGTHS,
+    VIDEO_SIZES,
+    VIDEO_SPEEDS,
+    videoLength,
+    type VideoLayout,
+  } from '../lib/scout/videos'
   import { downloadBlob } from '../lib/zip'
   import Icon from './Icon.svelte'
   import { fileName } from './ScoutGallery.svelte'
   import ScoutIcon from './ScoutIcon.svelte'
 
-  // Plays every round of one situation on the map at once, from freeze
-  // time to the end of the round, and saves it as a video or a still.
+  // Plays the rounds of one situation, one after another or all at once,
+  // from freeze time to the end of the round, and saves it as a video or a
+  // still.
   let { scout, situation, teamName = '', onclose }: { scout: MapScout; situation: Situation; teamName?: string; onclose?: () => void } = $props()
 
   const SPEEDS = [0.5, 1, 2, 4]
@@ -25,8 +42,10 @@
   let picked = $state<boolean[]>(situation.tracks.map(() => true))
   let highlight = $state<string | null>(null)
   let floors = $state<FloorMode>('auto')
-  // svelte-ignore state_referenced_locally
-  let layout = $state<OverlayLayout>(layoutOf('auto', situation.tracks.length))
+  let layout = $state<VideoLayout>('story')
+  // The round on screen one by one, an index into the picked rounds.
+  let storyIdx = $state(0)
+  let exportSpeed = $state(DEFAULT_SPEED)
   let size = $state('1080')
   let length = $state('round')
   let progress = $state(-1)
@@ -45,21 +64,27 @@
   const s = $derived(situation)
   // One array per change of the picks, the overlay keys its cache on it.
   // A map per round only has room for the first few picked rounds.
-  const pickedCount = $derived(picked.filter(Boolean).length)
+  const pickedList = $derived(picked.flatMap((on, i) => (on ? [i] : [])))
+  const pickedCount = $derived(pickedList.length)
   const capped = $derived(layout === 'rounds' && pickedCount > MAX_ROUND_MAPS)
+  const oneByOne = $derived(layout === 'story')
+  const cur = $derived(Math.max(0, Math.min(storyIdx, pickedCount - 1)))
   const rounds = $derived.by(() => {
-    const all = picked.flatMap((on, i) => (on ? [i] : []))
-    if (capped) return all.slice(0, MAX_ROUND_MAPS)
-    return picked.every(Boolean) ? null : all
+    if (oneByOne) return pickedCount ? [pickedList[cur]] : []
+    if (capped) return pickedList.slice(0, MAX_ROUND_MAPS)
+    return picked.every(Boolean) ? null : pickedList
   })
+  const story = $derived<Story | undefined>(oneByOne && pickedCount ? { n: cur + 1, of: pickedCount } : undefined)
   // As long as the longest of the picked rounds.
   const duration = $derived(overlay ? overlay.durationOf(rounds) : 30)
-  const videoSecs = $derived(overlay ? videoLength(overlay, rounds, lengthSeconds(length)) : 0)
+  const videoSecs = $derived(
+    !overlay ? 0 : oneByOne ? storyPlan(roundLengths(overlay, pickedList, lengthSeconds(length)), exportSpeed).total : videoLength(overlay, rounds, lengthSeconds(length)),
+  )
   const step = $derived(overlay?.step ?? 0.25)
   const exporting = $derived(progress >= 0)
   const shown = $derived(rounds ? rounds.map((i) => s.tracks[i]) : s.tracks)
   const marks = $derived(hitMarks(shown, duration, 10, 600))
-  const opts = $derived<OverlayOptions>({ rounds, highlight, floors, layout })
+  const opts = $derived<OverlayOptions>({ rounds, highlight, floors, layout: layout === 'story' ? 'together' : layout, story })
   const players = $derived.by(() => {
     const seen = new Map<string, { steamId: string; name: string; color: string; role: string }>()
     for (const r of scout.roles) seen.set(r.steamId, { steamId: r.steamId, name: r.name, color: r.color, role: s.side === 'ct' ? r.ct.label : r.t.label })
@@ -135,8 +160,14 @@
       const next = Math.min(duration, t + dt * speed)
       t = next
       if (next >= duration) {
-        playing = false
-        return
+        // One by one goes on with the next round.
+        if (oneByOne && cur < pickedCount - 1) {
+          storyIdx = cur + 1
+          t = 0
+        } else {
+          playing = false
+          return
+        }
       }
       raf = requestAnimationFrame(frame)
     })
@@ -145,8 +176,16 @@
 
   function toggle() {
     if (exporting) return
-    if (!playing && t >= duration - 1e-3) t = 0
+    if (!playing && t >= duration - 1e-3) {
+      if (oneByOne && cur >= pickedCount - 1) storyIdx = 0
+      t = 0
+    }
     playing = !playing
+  }
+
+  function goRound(by: number) {
+    storyIdx = Math.max(0, Math.min(pickedCount - 1, cur + by))
+    t = 0
   }
 
   function seek(to: number) {
@@ -181,7 +220,9 @@
     const o = overlay
     const view = opts
     try {
-      const v = await renderVideo(o, view, sizeOf(size), lengthSeconds(length), (p) => (progress = p), abort.signal)
+      const v = oneByOne
+        ? await renderStory(o, { highlight, floors }, pickedList, sizeOf(size), lengthSeconds(length), exportSpeed, (p) => (progress = p), abort.signal)
+        : await renderVideo(o, view, sizeOf(size), lengthSeconds(length), (p) => (progress = p), abort.signal)
       const name = `${baseName}.${v.ext}`
       downloadBlob(v.blob, name)
       saved = name
@@ -300,6 +341,13 @@
           <button class="playbtn" disabled={!overlay || exporting} title={playing ? 'Pause (Space)' : 'Play (Space)'} aria-label={playing ? 'Pause' : 'Play'} onclick={toggle}>
             <Icon name={playing ? 'pause' : 'play'} size={16} />
           </button>
+          {#if oneByOne && pickedCount > 1}
+            <span class="rnav">
+              <button class="plain" disabled={cur === 0 || exporting} title="Previous round" aria-label="Previous round" onclick={() => goRound(-1)}><Icon name="prev" size={14} /></button>
+              <span class="num">Round {cur + 1}<span class="faint"> of {pickedCount}</span></span>
+              <button class="plain" disabled={cur >= pickedCount - 1 || exporting} title="Next round" aria-label="Next round" onclick={() => goRound(1)}><Icon name="next" size={14} /></button>
+            </span>
+          {/if}
           <span class="clock num">{clockText(t)}<span class="faint"> / {clockText(duration)}</span></span>
           <div class="scrub">
             <input type="range" min="0" max={duration} step={step} value={t} disabled={!overlay || exporting} aria-label="Time in the round" oninput={(e) => seek(Number((e.currentTarget as HTMLInputElement).value))} />
@@ -325,7 +373,14 @@
               <button class:on={length === l.id} aria-pressed={length === l.id} onclick={() => (length = l.id)}>{l.label}</button>
             {/each}
           </div>
-          <button class="primary" disabled={!overlay || exporting} onclick={saveVideo}>
+          {#if oneByOne}
+            <div class="seg" role="group" aria-label="Video speed" title="How fast the rounds play in the video">
+              {#each VIDEO_SPEEDS as sp (sp)}
+                <button class:on={exportSpeed === sp} aria-pressed={exportSpeed === sp} onclick={() => (exportSpeed = sp)}>{sp}x</button>
+              {/each}
+            </div>
+          {/if}
+          <button class="primary" disabled={!overlay || exporting || !pickedCount} onclick={saveVideo}>
             <ScoutIcon name="download" size={15} /><span>Save video</span>
           </button>
           <button class="ghost" disabled={!overlay || exporting} title="Save this moment as a PNG" onclick={saveFrame}>
@@ -347,9 +402,9 @@
         <section>
           <div class="sh"><h3>Layout</h3></div>
           <div class="seg wrap" role="group" aria-label="Layout">
-            <button class:on={layout === 'rounds'} aria-pressed={layout === 'rounds'} title="Every round on a map of its own, all playing at once" onclick={() => (layout = 'rounds')}>Per round</button>
-            <button class:on={layout === 'players'} aria-pressed={layout === 'players'} title="Each player on a map of their own, plus one with everyone" onclick={() => (layout = 'players')}>Per player</button>
-            <button class:on={layout === 'together'} aria-pressed={layout === 'together'} title="Everyone on one map, each dot shows its round number" onclick={() => (layout = 'together')}>One map</button>
+            {#each VIDEO_LAYOUTS as l (l.id)}
+              <button class:on={layout === l.id} aria-pressed={layout === l.id} title={l.title} onclick={() => (layout = l.id)}>{l.label}</button>
+            {/each}
           </div>
           {#if capped}
             <p class="hint faint">Per round fits {MAX_ROUND_MAPS} rounds, the first {MAX_ROUND_MAPS} ticked are on screen. Untick some to see others.</p>
@@ -366,7 +421,7 @@
           </div>
           <ul class="rounds">
             {#each s.tracks as tr, i (tr.replayId + tr.round)}
-              <li class:off={!picked[i]}>
+              <li class:off={!picked[i]} class:cur={oneByOne && pickedList[cur] === i}>
                 <label>
                   <input type="checkbox" checked={picked[i]} onchange={() => flip(i)} />
                   <span class="rn" class:won={tr.won} title={tr.won ? 'Won' : 'Lost'}>{i + 1}</span>
@@ -809,6 +864,38 @@
   .rounds input {
     accent-color: var(--accent);
     margin: 0;
+  }
+
+  .rounds li.cur {
+    margin: 0 -8px;
+    padding-left: 8px;
+    padding-right: 8px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+  }
+
+  .rnav {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--display);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .rnav button {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-2);
+  }
+
+  .rnav button:hover:not(:disabled) {
+    color: var(--text);
   }
 
   .rn {

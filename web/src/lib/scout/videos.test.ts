@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { layoutOf, lengthSeconds, pages, sizeOf, teamFolder, videoPath } from './videos'
+import { lengthSeconds, pages, sizeOf, STORY_HOLD, STORY_INTRO, storyAt, storyPages, storyPlan, teamFolder, videoPath } from './videos'
 
 describe('videoPath', () => {
   it('puts each video in team, map and side folders', () => {
@@ -25,14 +25,44 @@ describe('videoPath', () => {
   })
 })
 
-describe('layoutOf', () => {
-  it('picks a map per round, then per player when there are many', () => {
-    expect(layoutOf('auto', 1)).toBe('together')
-    expect(layoutOf('auto', 2)).toBe('rounds')
-    expect(layoutOf('auto', 9)).toBe('rounds')
-    expect(layoutOf('auto', 10)).toBe('players')
-    expect(layoutOf('together', 10)).toBe('together')
-    expect(layoutOf('rounds', 30)).toBe('rounds')
+describe('storyPlan', () => {
+  const rounds = [
+    { round: 2, length: 40 },
+    { round: 5, length: 90 },
+  ]
+
+  it('puts the rounds one after another with a title card each', () => {
+    const plan = storyPlan(rounds, 2)
+    expect(plan.parts.map((p) => [p.round, p.start])).toEqual([
+      [2, 0],
+      [5, STORY_INTRO + 20 + STORY_HOLD],
+    ])
+    expect(plan.total).toBeCloseTo(2 * (STORY_INTRO + STORY_HOLD) + 20 + 45)
+  })
+
+  it('finds the round and its time at any moment', () => {
+    const plan = storyPlan(rounds, 2)
+    // On the first title card the round has not started.
+    expect(storyAt(plan, 0.5)).toMatchObject({ k: 0, t: 0 })
+    expect(storyAt(plan, 0.5).intro).toBeGreaterThan(0.9)
+    // Ten seconds in at twice the speed is 20 s of the round.
+    expect(storyAt(plan, STORY_INTRO + 10)).toEqual({ k: 0, t: 20, intro: 0 })
+    // The hold keeps the end of the round.
+    expect(storyAt(plan, STORY_INTRO + 20 + 0.5)).toEqual({ k: 0, t: 40, intro: 0 })
+    const second = plan.parts[1].start
+    const mid = storyAt(plan, second + STORY_INTRO + 1)
+    expect(mid.k).toBe(1)
+    expect(mid.t).toBeCloseTo(2)
+    expect(storyAt(plan, plan.total + 5)).toEqual({ k: 1, t: 90, intro: 0 })
+  })
+
+  it('splits long sets into videos of at most five minutes', () => {
+    const many = Array.from({ length: 10 }, (_, i) => ({ round: i, length: 100 }))
+    const parts = storyPages(many, 2)
+    for (const p of parts) expect(storyPlan(p, 2).total).toBeLessThanOrEqual(300)
+    expect(parts.flat().map((r) => r.round)).toEqual(many.map((r) => r.round))
+    // A single round longer than the limit still gets its own video.
+    expect(storyPages([{ round: 0, length: 900 }], 1)).toHaveLength(1)
   })
 })
 

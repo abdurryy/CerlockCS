@@ -11,7 +11,8 @@ import { FONT, circle, flameSprite, roundRect, setSpacing, smokeSprite } from '.
 import { lerpAngle } from '../replay'
 import type { MapInfo } from '../types'
 import { EQ, NADE_COLOR } from '../weapons'
-import { levelOf, scoutLabels, scoutOptions } from './aggregate'
+import { levelOf, scoutLabels, scoutOptions, type MapLabels } from './aggregate'
+import { nearestPlace } from './spots'
 import {
   FIRE_RADIUS,
   SMOKE_RADIUS,
@@ -57,6 +58,17 @@ export interface OverlayOptions {
   // Cuts the time bar at this many seconds, for a shorter video.
   length?: number
   layout?: OverlayLayout
+  // One round of a round by round video: the side column lists what
+  // happens in it instead of the totals.
+  story?: Story
+  // How much of the round's title card covers the map, 0 to 1.
+  intro?: number
+}
+
+export interface Story {
+  // The round's place in the video, 1 based, and how many there are.
+  n: number
+  of: number
 }
 
 const TEXT_3 = '#6e7883'
@@ -253,6 +265,13 @@ interface Layout {
   bar: { x: number; y: number; w: number }
 }
 
+interface FeedLine {
+  t: number
+  color: string
+  text: string
+  bad?: boolean
+}
+
 // Cell is what one map of a grid is for.
 type Cell = Pick<Panel, 'player' | 'all' | 'round'>
 
@@ -358,7 +377,7 @@ export class Overlay {
   private bg: { key: string; canvas: HTMLCanvasElement; layout: Layout } | null = null
   // What the last frame was asked for, so a frame like the one before
   // skips the checks.
-  private last = { w: 0, h: 0, rounds: null as OverlayOptions['rounds'], floors: undefined as FloorMode | undefined, hi: undefined as string | null | undefined, length: undefined as number | undefined, layout: undefined as OverlayLayout | undefined, vis: [] as PTrack[] }
+  private last = { w: 0, h: 0, rounds: null as OverlayOptions['rounds'], floors: undefined as FloorMode | undefined, hi: undefined as string | null | undefined, length: undefined as number | undefined, layout: undefined as OverlayLayout | undefined, story: undefined as Story | undefined, vis: [] as PTrack[] }
   private pt = new Float64Array(5)
   private trailX = new Float64Array(0)
   private trailY = new Float64Array(0)
@@ -371,6 +390,7 @@ export class Overlay {
     readonly situation: Situation,
     readonly stage: Stage,
     readonly teamName: string,
+    private labels: MapLabels,
   ) {
     const so = scoutOptions(scout)
     this.step = so.trackStep || 0.125
@@ -394,7 +414,7 @@ export class Overlay {
   static async create(scout: MapScout, situation: Situation, opts: { teamName?: string } = {}): Promise<Overlay> {
     const labels = scoutLabels(scout) ?? { callouts: [], sites: [] }
     const [stage] = await Promise.all([stageFor(scout.info, labels, [situation.heat20, scout.team.ct, scout.team.t]), assetsAt(60, ['hud/dead', 'weapon/c4'])])
-    return new Overlay(scout, situation, stage, opts.teamName?.trim() ?? '')
+    return new Overlay(scout, situation, stage, opts.teamName?.trim() ?? '', labels)
   }
 
   // durationOf is the length of a video of these rounds, all when null.
@@ -460,7 +480,7 @@ export class Overlay {
     const ctx = target.getContext('2d') as CanvasRenderingContext2D | null
     if (!ctx) return
     const last = this.last
-    const same = !!this.bg && last.w === w && last.h === h && last.rounds === opts.rounds && last.floors === opts.floors && last.hi === opts.highlight && last.length === opts.length && last.layout === opts.layout
+    const same = !!this.bg && last.w === w && last.h === h && last.rounds === opts.rounds && last.floors === opts.floors && last.hi === opts.highlight && last.length === opts.length && last.layout === opts.layout && last.story === opts.story
     const vis = same ? last.vis : this.visible(opts)
     if (!same) this.span = lengthOf(vis.map((v) => v.track), opts.length && opts.length > 0 ? Math.min(opts.length, this.duration) : this.duration)
     const bg = same ? this.bg! : this.background(w, h, opts, vis)
@@ -471,6 +491,7 @@ export class Overlay {
     last.hi = opts.highlight
     last.length = opts.length
     last.layout = opts.layout
+    last.story = opts.story
     last.vis = vis
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.globalAlpha = 1
@@ -501,6 +522,115 @@ export class Overlay {
     ctx.restore()
     if (!vis.length) this.drawEmpty(ctx, L)
     this.drawClock(ctx, L, time)
+    if (opts.story && vis.length === 1) this.drawFeed(ctx, L, vis[0], time)
+    if (opts.story && opts.intro && opts.intro > 0 && vis.length === 1) this.drawIntro(ctx, L, vis[0], opts.story, opts.intro)
+  }
+
+  // ---- Round by round ----
+
+  private feeds = new Map<PTrack, FeedLine[]>()
+
+  // feedOf lists what happens in a round, for the side column: kills,
+  // deaths, the site hit and the plant, with where they happened.
+  private feedOf(tr: PTrack): FeedLine[] {
+    let out = this.feeds.get(tr)
+    if (out) return out
+    out = []
+    // The demo's own callout when it has one, else the nearest label.
+    const at = (e: TrackEvent) => {
+      const place = e.place || nearestPlace(this.labels, e.x, e.y, levelOf(this.scout.info, e.z))
+      return place ? ` at ${place}` : ''
+    }
+    for (const ev of tr.kills) out.push({ t: ev.e.t, color: ev.color, text: `${ev.e.player} got a kill${at(ev.e)}` })
+    for (const ev of tr.deaths) if (ev.id) out.push({ t: ev.e.t, color: ev.color, text: `${ev.e.player} died${at(ev.e)}`, bad: true })
+    for (const ev of tr.plants) out.push({ t: ev.e.t, color: ACCENT, text: ev.e.place ? `Bomb planted on ${ev.e.place}` : `Bomb planted${at(ev.e)}` })
+    const t = tr.track
+    if (t.hit && t.hitTime >= 0) out.push({ t: t.hitTime, color: TEXT_3, text: this.situation.side === 't' ? `They hit ${t.hit}` : `T side hits ${t.hit}` })
+    out.sort((a, b) => a.t - b.t)
+    this.feeds.set(tr, out)
+    return out
+  }
+
+  // drawFeed lists what happened so far in the round, newest at the bottom.
+  private drawFeed(ctx: CanvasRenderingContext2D, L: Layout, tr: PTrack, t: number) {
+    const { u, h } = L
+    const lines = this.feedOf(tr).filter((l) => l.t <= t)
+    if (!L.wide) {
+      // The square frame has room for the latest line only, in the footer.
+      const last = lines[lines.length - 1]
+      if (!last) return
+      font(ctx, 500, 19, u, 0, FONT)
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'alphabetic'
+      ctx.fillStyle = TEXT_3
+      ctx.fillText(clockText(last.t), 72 * u, h - 56 * u)
+      ctx.fillStyle = TEXT
+      ctx.fillText(fitText(ctx, last.text, L.w - 220 * u), 132 * u, h - 56 * u)
+      return
+    }
+    const x0 = 64 * u
+    const colW = 470 * u
+    const top = 760 * u
+    const rowH = 34 * u
+    const room = Math.max(1, Math.floor((h - 40 * u - top) / rowH))
+    const shown = lines.slice(-room)
+    if (!lines.length) {
+      font(ctx, 500, 18, u, 0, FONT)
+      ctx.fillStyle = TEXT_3
+      ctx.textAlign = 'left'
+      ctx.fillText('Nothing yet', x0, top + 20 * u)
+      return
+    }
+    shown.forEach((l, i) => {
+      const y = top + i * rowH + 20 * u
+      ctx.globalAlpha = Math.min(1, (t - l.t) / 0.35 + 0.15)
+      font(ctx, 600, 17, u, 0.02)
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'alphabetic'
+      ctx.fillStyle = TEXT_3
+      ctx.fillText(clockText(l.t), x0, y)
+      ctx.fillStyle = l.color
+      circle(ctx, x0 + 64 * u, y - 6 * u, 5.5 * u)
+      ctx.fill()
+      font(ctx, 500, 19, u, 0, FONT)
+      ctx.fillStyle = l.bad ? TEXT_2 : TEXT
+      ctx.fillText(fitText(ctx, l.text, colW - 80 * u), x0 + 80 * u, y)
+    })
+    ctx.globalAlpha = 1
+    setSpacing(ctx, '0px')
+  }
+
+  // drawIntro is the round's title card over the map.
+  private drawIntro(ctx: CanvasRenderingContext2D, L: Layout, tr: PTrack, story: Story, a: number) {
+    const { u } = L
+    const m = L.map
+    const t = tr.track
+    ctx.globalAlpha = a
+    ctx.fillStyle = 'rgba(11,13,17,0.78)'
+    ctx.fillRect(m.x - 24 * u, m.y - 24 * u, m.w + 48 * u, m.h + 48 * u)
+    const cx = m.x + m.w / 2
+    const cy = m.y + m.h / 2
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'alphabetic'
+    font(ctx, 600, 22, u, 0.16)
+    ctx.fillStyle = TEXT_3
+    ctx.fillText(`ROUND ${story.n} OF ${story.of}`, cx, cy - 54 * u)
+    font(ctx, 700, 64, u, -0.005)
+    ctx.fillStyle = TEXT
+    ctx.fillText(t.label, cx, cy + 14 * u)
+    font(ctx, 600, 26, u, 0.01)
+    const res = t.won ? 'Won' : 'Lost'
+    const hit = t.hit && t.hitTime >= 0 ? `   ·   ${this.situation.side === 't' ? 'They hit' : 'T side hits'} ${t.hit} at ${clockText(t.hitTime)}` : ''
+    const rw = ctx.measureText(res).width
+    const hw = ctx.measureText(hit).width
+    const x = cx - (rw + hw) / 2
+    ctx.textAlign = 'left'
+    ctx.fillStyle = t.won ? GOOD : BAD
+    ctx.fillText(res, x, cy + 62 * u)
+    ctx.fillStyle = TEXT_2
+    ctx.fillText(hit, x + rw, cy + 62 * u)
+    ctx.globalAlpha = 1
+    setSpacing(ctx, '0px')
   }
 
   private drawRounds(ctx: CanvasRenderingContext2D, L: Layout, vis: PTrack[], on: PTrack[], time: number, hi: string | null, opts: OverlayOptions) {
@@ -522,17 +652,19 @@ export class Overlay {
     const cones = vis.length === 1 || L.grid === 'rounds'
     // With several rounds on a map every dot carries its round's number.
     const numbered = vis.length > 1 && L.grid !== 'rounds'
+    // With one round on a map their routes stay on it.
+    const paths = vis.length === 1 || L.grid === 'rounds'
     for (const tr of on) {
       this.cur = tr
       const f = fadeOf(tr.track, time)
       const num = numbered ? tr.index + 1 : 0
-      for (const pp of tr.players) if (!hi || pp.p.steamId !== hi) this.drawPlayer(ctx, L, pp, time, trail, (hi ? FADED : 1) * f, false, cones && !hi, num)
+      for (const pp of tr.players) if (!hi || pp.p.steamId !== hi) this.drawPlayer(ctx, L, pp, time, trail, (hi ? FADED : 1) * f, false, cones && !hi, num, paths)
     }
     if (hi) {
       for (const tr of on) {
         this.cur = tr
         const num = numbered ? tr.index + 1 : 0
-        for (const pp of tr.players) if (pp.p.steamId === hi) this.drawPlayer(ctx, L, pp, time, trail, fadeOf(tr.track, time), true, true, num)
+        for (const pp of tr.players) if (pp.p.steamId === hi) this.drawPlayer(ctx, L, pp, time, trail, fadeOf(tr.track, time), true, true, num, paths)
       }
     }
   }
@@ -542,7 +674,7 @@ export class Overlay {
   private background(w: number, h: number, opts: OverlayOptions, vis: PTrack[]): { canvas: HTMLCanvasElement; layout: Layout } {
     const floors = floorsFor(this.heights, opts.floors ?? 'auto')
     const grid = opts.layout === 'players' && this.legend.length > 1 ? 'players' : opts.layout === 'rounds' && vis.length > 1 ? 'rounds' : ''
-    const key = [w, h, floors.join(','), opts.highlight ?? '', this.span, grid, vis.map((v) => v.index).join(',')].join('|')
+    const key = [w, h, floors.join(','), opts.highlight ?? '', this.span, grid, opts.story ? `${opts.story.n}/${opts.story.of}` : '', vis.map((v) => v.index).join(',')].join('|')
     if (this.bg && this.bg.key === key) return this.bg
     const cells: Cell[] =
       grid === 'players' ? [...this.legend.map((player) => ({ player })), { all: true }] : grid === 'rounds' ? vis.map((v) => ({ round: v.index })) : []
@@ -718,7 +850,8 @@ export class Overlay {
     return this.teamName ? `${map} · ${this.teamName}` : map
   }
 
-  private bits(vis: PTrack[]): string[] {
+  private bits(vis: PTrack[], story?: Story): string[] {
+    if (story && vis.length === 1) return [`Round ${story.n} of ${story.of}`, vis[0].track.label, vis[0].track.won ? 'won' : 'lost']
     const s = this.situation
     const n = s.tracks.length
     const shown = vis.length === n ? plural(n, 'round') : `${vis.length} of ${plural(n, 'round')}`
@@ -726,7 +859,7 @@ export class Overlay {
     return [shown, plural(matches, 'match')]
   }
 
-  private head(ctx: CanvasRenderingContext2D, L: Layout, vis: PTrack[], y: { kicker: number; title: number; sub: number; size: number }, maxW: number, titleW: number) {
+  private head(ctx: CanvasRenderingContext2D, L: Layout, vis: PTrack[], y: { kicker: number; title: number; sub: number; size: number }, maxW: number, titleW: number, story?: Story) {
     const { u } = L
     const x0 = (L.wide ? 64 : 72) * u
     ctx.textAlign = 'left'
@@ -749,7 +882,7 @@ export class Overlay {
     font(ctx, 600, 22, u, 0.01)
     ctx.fillStyle = TEXT_2
     ctx.textBaseline = 'middle'
-    ctx.fillText(fitText(ctx, this.bits(vis).join('   ·   '), x0 + maxW - x), x, y.sub + 1 * u)
+    ctx.fillText(fitText(ctx, this.bits(vis, story).join('   ·   '), x0 + maxW - x), x, y.sub + 1 * u)
     ctx.textBaseline = 'alphabetic'
     setSpacing(ctx, '0px')
   }
@@ -759,7 +892,7 @@ export class Overlay {
     const x0 = 64 * u
     const colW = 470 * u
     const logoW = this.logoHeight(w, h) * 3.27
-    this.head(ctx, L, vis, { kicker: 74 * u, title: 136 * u, sub: 186 * u, size: 64 }, colW + 40 * u, w - 128 * u - logoW - 40 * u)
+    this.head(ctx, L, vis, { kicker: 74 * u, title: 136 * u, sub: 186 * u, size: 64 }, colW + 40 * u, w - 128 * u - logoW - 40 * u, opts.story)
     logoMark(ctx, this.logo(w, h), w - 64 * u, 136 * u, this.logoHeight(w, h))
 
     // Clock and time bar.
@@ -812,6 +945,12 @@ export class Overlay {
       ctx.fillText(`Role on ${side.toUpperCase()}, from all their rounds`, x0 + colW, 470 * u)
     }
 
+    // Round by round, the rest of the column lists what happens.
+    if (opts.story) {
+      label(ctx, 'What happens', x0, Math.max(y + 46 * u, 726 * u), u)
+      return
+    }
+
     // The numbers behind the situation.
     y = Math.max(y + 46 * u, 726 * u)
     label(ctx, 'In these rounds', x0, y, u)
@@ -841,7 +980,7 @@ export class Overlay {
     const { w, h, u } = L
     const logoW = this.logoHeight(w, h) * 3.27
     const room = w - 72 * u - logoW - 40 * u - 72 * u
-    this.head(ctx, L, vis, { kicker: 96 * u, title: 172 * u, sub: 224 * u, size: 76 }, room, room)
+    this.head(ctx, L, vis, { kicker: 96 * u, title: 172 * u, sub: 224 * u, size: 76 }, room, room, opts.story)
     logoMark(ctx, this.logo(w, h), w - 72 * u, 172 * u, this.logoHeight(w, h))
     label(ctx, 'Time after freeze', 72 * u, h - 214 * u, u)
     this.paintBar(ctx, L, vis)
@@ -854,6 +993,8 @@ export class Overlay {
     // Footer: the strongest pattern, or the matches.
     ctx.fillStyle = LINE
     ctx.fillRect(72 * u, Math.round(h - 100 * u), w - 144 * u, Math.max(1, Math.round(u)))
+    // Round by round the footer shows the latest thing that happened.
+    if (opts.story) return
     const note = this.situation.notes[0] || roundsLine(vis.map((v) => v.track))
     font(ctx, 500, 19, u, 0, FONT)
     ctx.fillStyle = TEXT_2
@@ -1193,8 +1334,9 @@ export class Overlay {
     this.trailA = new Float64Array(n)
   }
 
-  // num is the round's number to write in the dot, 0 for none.
-  private drawPlayer(ctx: CanvasRenderingContext2D, L: Layout, pp: PPlayer, t: number, trail: number, alpha: number, focus: boolean, cone: boolean, num = 0) {
+  // num is the round's number to write in the dot, 0 for none. With path
+  // the whole way they walked since freeze time is drawn faintly.
+  private drawPlayer(ctx: CanvasRenderingContext2D, L: Layout, pp: PPlayer, t: number, trail: number, alpha: number, focus: boolean, cone: boolean, num = 0, path = false) {
     const { u } = L
     const p = pp.p
     const step = this.step
@@ -1209,6 +1351,7 @@ export class Overlay {
       alpha *= Math.min(1, (DEAD_SHOW - since) / 1)
     }
     const headLevel = levelOf(this.scout.info, pt[2])
+    if (path) this.drawPath(ctx, L, pp, t, alpha)
     // The trail: samples from t - trail up to now, then the current spot.
     if (trail > 0) {
       const from = Math.max(0, Math.ceil((t - trail) / step - 1e-6))
@@ -1334,6 +1477,40 @@ export class Overlay {
       }
     }
     ctx.globalAlpha = 1
+  }
+
+  // drawPath is the way a player walked from freeze time up to t, one thin
+  // faint line per stretch on a floor, so their route stays readable.
+  private drawPath(ctx: CanvasRenderingContext2D, L: Layout, pp: PPlayer, t: number, alpha: number) {
+    const p = pp.p
+    const to = Math.min(p.xs.length - 1, Math.floor(t / this.step))
+    if (to < 1) return
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.strokeStyle = p.color
+    ctx.lineWidth = 2 * L.u
+    let lv = -1
+    let open = false
+    let v: View | null = null
+    for (let i = 0; i <= to; i++) {
+      if (i > 0 && !p.alive[i - 1]) break
+      if (pp.levels[i] !== lv) {
+        if (open) ctx.stroke()
+        open = false
+        lv = pp.levels[i]
+        const where = this.at(L, lv, p.steamId)
+        if (!where) continue
+        v = where.p.v
+        ctx.globalAlpha = alpha * where.a * 0.32
+        ctx.beginPath()
+        ctx.moveTo(v.ox + p.xs[i] * v.k, v.oy + p.ys[i] * v.k)
+        open = true
+        continue
+      }
+      if (open && v) ctx.lineTo(v.ox + p.xs[i] * v.k, v.oy + p.ys[i] * v.k)
+    }
+    if (open) ctx.stroke()
+    ctx.globalAlpha = alpha
   }
 
   // roundTitle names a round's map: its number, the round, won or lost

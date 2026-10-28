@@ -205,6 +205,8 @@ export interface TrackEvent {
   player: string
   until?: number
   from?: [number, number]
+  // The callout it happened at, for kills, deaths and the plant.
+  place?: string
 }
 
 // SituationTrack is the start of one round, like "Match 2, round 13".

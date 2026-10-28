@@ -4,7 +4,7 @@
 // as a track and writes plain notes with the numbers behind them.
 
 import { SLOT_COLORS } from '../colors'
-import { FLAG, lerpAngle, type Replay } from '../replay'
+import { FLAG, lerpAngle, prettyPlace, type Replay } from '../replay'
 import type { Grenade } from '../types'
 import { EQ } from '../weapons'
 import type { Binner } from './aggregate'
@@ -648,15 +648,16 @@ export function buildTrack(ctx: RoundCtx, read: RoundRead, replayId: string, opt
     const from = k.killer >= 0 ? bin.radar(k.killerPos[0], k.killerPos[1]) : undefined
     const killer = name.get(k.killer)
     const victim = name.get(k.victim)
+    const place = prettyPlace(k.victimPlace ?? '') || undefined
     if (killer && k.killer !== k.victim && k.killerSide !== k.victimSide) {
-      events.push({ t: sec(k.tick), kind: 'kill', x, y, z: k.victimPos[2], player: killer, from })
+      events.push({ t: sec(k.tick), kind: 'kill', x, y, z: k.victimPos[2], player: killer, from, place })
     }
-    if (victim) events.push({ t: sec(k.tick), kind: 'death', x, y, z: k.victimPos[2], player: victim, from })
+    if (victim) events.push({ t: sec(k.tick), kind: 'death', x, y, z: k.victimPos[2], player: victim, from, place })
   }
   for (const e of r.roundBomb[i] ?? []) {
     if (e.kind !== 'planted' || e.tick < live || e.tick > until) continue
     const [x, y] = bin.radar(e.pos[0], e.pos[1])
-    events.push({ t: sec(e.tick), kind: 'plant', x, y, z: e.pos[2], player: name.get(e.player) ?? r.playerName(e.player) })
+    events.push({ t: sec(e.tick), kind: 'plant', x, y, z: e.pos[2], player: name.get(e.player) ?? r.playerName(e.player), place: e.site ? `${e.site} site` : undefined })
   }
   events.sort((a, b) => a.t - b.t)
   return {
