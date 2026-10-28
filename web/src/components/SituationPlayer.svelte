@@ -1,7 +1,7 @@
 <script lang="ts">
   import { copyText } from '../lib/clipboard'
   import { mapLabel } from '../lib/format'
-  import { clockText, hitMarks, Overlay, type FloorMode, type OverlayLayout, type OverlayOptions } from '../lib/scout/overlay'
+  import { clockText, hitMarks, MAX_ROUND_MAPS, Overlay, type FloorMode, type OverlayLayout, type OverlayOptions } from '../lib/scout/overlay'
   import type { MapScout, Situation, SituationTrack } from '../lib/scout/types'
   import { Cancelled } from '../lib/scout/video'
   import { FPS, layoutOf, lengthSeconds, MAX_VIDEO_BYTES, renderVideo, sizeOf, VIDEO_LENGTHS, VIDEO_SIZES, videoLength } from '../lib/scout/videos'
@@ -44,7 +44,14 @@
 
   const s = $derived(situation)
   // One array per change of the picks, the overlay keys its cache on it.
-  const rounds = $derived.by(() => (picked.every(Boolean) ? null : picked.flatMap((on, i) => (on ? [i] : []))))
+  // A map per round only has room for the first few picked rounds.
+  const pickedCount = $derived(picked.filter(Boolean).length)
+  const capped = $derived(layout === 'rounds' && pickedCount > MAX_ROUND_MAPS)
+  const rounds = $derived.by(() => {
+    const all = picked.flatMap((on, i) => (on ? [i] : []))
+    if (capped) return all.slice(0, MAX_ROUND_MAPS)
+    return picked.every(Boolean) ? null : all
+  })
   // As long as the longest of the picked rounds.
   const duration = $derived(overlay ? overlay.durationOf(rounds) : 30)
   const videoSecs = $derived(overlay ? videoLength(overlay, rounds, lengthSeconds(length)) : 0)
@@ -340,9 +347,13 @@
         <section>
           <div class="sh"><h3>Layout</h3></div>
           <div class="seg wrap" role="group" aria-label="Layout">
-            <button class:on={layout === 'together'} aria-pressed={layout === 'together'} title="Everyone on one map" onclick={() => (layout = 'together')}>One map</button>
-            <button class:on={layout === 'players'} aria-pressed={layout === 'players'} title="Each player on a map of their own, easier to read with many rounds" onclick={() => (layout = 'players')}>Map per player</button>
+            <button class:on={layout === 'rounds'} aria-pressed={layout === 'rounds'} title="Every round on a map of its own, all playing at once" onclick={() => (layout = 'rounds')}>Per round</button>
+            <button class:on={layout === 'players'} aria-pressed={layout === 'players'} title="Each player on a map of their own, plus one with everyone" onclick={() => (layout = 'players')}>Per player</button>
+            <button class:on={layout === 'together'} aria-pressed={layout === 'together'} title="Everyone on one map, each dot shows its round number" onclick={() => (layout = 'together')}>One map</button>
           </div>
+          {#if capped}
+            <p class="hint faint">Per round fits {MAX_ROUND_MAPS} rounds, the first {MAX_ROUND_MAPS} ticked are on screen. Untick some to see others.</p>
+          {/if}
         </section>
 
         <section>
@@ -358,8 +369,8 @@
               <li class:off={!picked[i]}>
                 <label>
                   <input type="checkbox" checked={picked[i]} onchange={() => flip(i)} />
+                  <span class="rn" class:won={tr.won} title={tr.won ? 'Won' : 'Lost'}>{i + 1}</span>
                   <span class="rl">{tr.label}</span>
-                  <span class="wl" class:good={tr.won} class:bad={!tr.won}>{tr.won ? 'W' : 'L'}</span>
                 </label>
                 <span class="hitline faint">{hitText(tr.hit, tr.hitTime)}</span>
                 <span class="acts">
@@ -800,6 +811,32 @@
     margin: 0;
   }
 
+  .rn {
+    flex: none;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border-radius: 4px;
+    background: var(--bad);
+    color: var(--bg);
+    font-family: var(--display);
+    font-size: 12.5px;
+    font-weight: 700;
+    line-height: 20px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .rn.won {
+    background: var(--good);
+  }
+
+  .hint {
+    margin: 8px 0 0;
+    font-size: 12.5px;
+    line-height: 1.4;
+  }
+
   .rl {
     min-width: 0;
     white-space: nowrap;
@@ -807,23 +844,9 @@
     text-overflow: ellipsis;
   }
 
-  .wl {
-    font-family: var(--display);
-    font-size: 12px;
-    font-weight: 700;
-  }
-
-  .good {
-    color: var(--good);
-  }
-
-  .bad {
-    color: var(--bad);
-  }
-
   .hitline {
     grid-column: 1;
-    padding-left: 22px;
+    padding-left: 49px;
     font-size: 12.5px;
   }
 

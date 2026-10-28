@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { layoutOf, lengthSeconds, sizeOf, teamFolder, videoPath } from './videos'
+import { layoutOf, lengthSeconds, pages, sizeOf, teamFolder, videoPath } from './videos'
 
 describe('videoPath', () => {
   it('puts each video in team, map and side folders', () => {
@@ -26,10 +26,25 @@ describe('videoPath', () => {
 })
 
 describe('layoutOf', () => {
-  it('splits by player once there are many rounds', () => {
-    expect(layoutOf('auto', 3)).toBe('together')
-    expect(layoutOf('auto', 4)).toBe('players')
+  it('picks a map per round, then per player when there are many', () => {
+    expect(layoutOf('auto', 1)).toBe('together')
+    expect(layoutOf('auto', 2)).toBe('rounds')
+    expect(layoutOf('auto', 9)).toBe('rounds')
+    expect(layoutOf('auto', 10)).toBe('players')
     expect(layoutOf('together', 10)).toBe('together')
-    expect(layoutOf('players', 1)).toBe('players')
+    expect(layoutOf('rounds', 30)).toBe('rounds')
+  })
+})
+
+describe('pages', () => {
+  it('splits a map per round into nines', () => {
+    const r = Array.from({ length: 20 }, (_, i) => i)
+    expect(pages(r, 'rounds').map((p) => [p[0], p.length])).toEqual([[0, 9], [9, 9], [18, 2]])
+    expect(pages(r, 'players')).toEqual([r])
+    expect(pages([0, 1], 'rounds')).toEqual([[0, 1]])
+  })
+
+  it('names the parts by their rounds', () => {
+    expect(videoPath('E-ManiacS', 'de_mirage', { side: 'ct', buy: 'full' }, 'mp4', { from: 10, to: 18 })).toBe('e-maniacs/mirage/ct/full-buys-rounds-10-18.mp4')
   })
 })

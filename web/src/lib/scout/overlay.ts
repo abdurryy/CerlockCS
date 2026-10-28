@@ -39,8 +39,12 @@ import type { MapScout, RoleCard, Situation, SituationTrack, TrackEvent, TrackPl
 export type FloorMode = 'auto' | 'both' | number
 
 // 'together' puts everyone on one map, 'players' gives every player a map
-// of their own.
-export type OverlayLayout = 'together' | 'players'
+// of their own plus one with everyone, 'rounds' gives every round a map of
+// its own.
+export type OverlayLayout = 'together' | 'players' | 'rounds'
+
+// A map per round shows at most this many rounds at once.
+export const MAX_ROUND_MAPS = 9
 
 export interface OverlayOptions {
   // Tracks to show, by index into situation.tracks. All when left out.
@@ -211,6 +215,9 @@ interface PPlayer {
 }
 
 interface PTrack {
+  // Its index in situation.tracks, the round's number on screen is one
+  // more.
+  index: number
   track: SituationTrack
   players: PPlayer[]
   areas: Ev[]
@@ -225,8 +232,11 @@ interface Panel {
   v: View
   // The floor's area on screen, for its label.
   box: Rect
-  // The player this map is for, with layout 'players'.
+  // What the map is for in a grid: one player, everyone, or one round
+  // (an index into situation.tracks).
   player?: Legend
+  all?: boolean
+  round?: number
 }
 
 interface Layout {
@@ -234,13 +244,17 @@ interface Layout {
   h: number
   u: number
   wide: boolean
-  byPlayer: boolean
+  // A map per player or per round, '' for the normal layout.
+  grid: '' | 'players' | 'rounds'
   panels: Panel[]
   map: Rect
   // The clock, the time bar and where the dynamic parts go.
   clock: { x: number; y: number; size: number }
   bar: { x: number; y: number; w: number }
 }
+
+// Cell is what one map of a grid is for.
+type Cell = Pick<Panel, 'player' | 'all' | 'round'>
 
 interface Legend {
   id: string
@@ -326,6 +340,10 @@ export class Overlay {
   private span = 0
   // Many rounds on screen this frame: draw less.
   private busy = false
+  // While drawing: the round being drawn, and on player maps whether it
+  // goes on the player's own map or on the one with everyone.
+  private cur: PTrack | null = null
+  private pass: 'own' | 'all' = 'own'
   // Called when something that was loading is in, so a paused view can
   // redraw.
   onchange: (() => void) | null = null
@@ -364,7 +382,7 @@ export class Overlay {
       for (let i = 0; i < l.length; i++) s += l[i]
       return s
     })
-    this.tracks = situation.tracks.map((tr) => prepTrack(tr, info, this.step))
+    this.tracks = situation.tracks.map((tr, i) => prepTrack(tr, i, info, this.step))
     this.legend = legendOf(scout.roles, situation)
     this.smoke = smokeSprite()
     this.fire = fireSprite()
@@ -425,10 +443,12 @@ export class Overlay {
 
   // visible lists the tracks to draw.
   private visible(opts: OverlayOptions): PTrack[] {
-    if (!opts.rounds) return this.tracks
-    const out: PTrack[] = []
-    for (const i of opts.rounds) if (this.tracks[i]) out.push(this.tracks[i])
-    return out
+    let out: PTrack[] = this.tracks
+    if (opts.rounds) {
+      out = []
+      for (const i of opts.rounds) if (this.tracks[i]) out.push(this.tracks[i])
+    }
+    return opts.layout === 'rounds' ? out.slice(0, MAX_ROUND_MAPS) : out
   }
 
   // draw paints the overlay at t seconds after freeze time onto the canvas
@@ -461,38 +481,72 @@ export class Overlay {
     const hi = opts.highlight ?? null
     // Rounds that are over fade out and then leave the map.
     const on = vis.filter((tr) => fadeOf(tr.track, time) > 0)
-    this.busy = vis.length >= BUSY
+    // A map per round has one round on each map, so nothing is left out.
+    this.busy = vis.length >= BUSY && L.grid !== 'rounds'
     // Clip to the map area so nothing runs into the side column.
     ctx.save()
     ctx.beginPath()
     ctx.rect(L.map.x, L.map.y, L.map.w, L.map.h)
     ctx.clip()
-    for (const tr of on) this.drawAreas(ctx, L, tr, time, hi)
-    for (const tr of on) this.drawPops(ctx, L, tr, time, hi)
-    for (const tr of on) this.drawMarks(ctx, L, tr, time, hi)
-    const trail = Math.min(this.busy ? BUSY_TRAIL : Infinity, Math.max(0, opts.trail ?? TRAIL))
-    // View cones only when they stay readable: one round, or the
-    // highlighted player.
-    const cones = vis.length === 1
-    for (const tr of on) {
-      const f = fadeOf(tr.track, time)
-      for (const pp of tr.players) if (!hi || pp.p.steamId !== hi) this.drawPlayer(ctx, L, pp, time, trail, (hi ? FADED : 1) * f, false, cones && !hi)
+    // Player maps draw everything twice: on the player's own map and on
+    // the map with everyone.
+    const passes: ('own' | 'all')[] = L.grid === 'players' && L.panels.some((q) => q.all) ? ['own', 'all'] : ['own']
+    for (const pass of passes) {
+      this.pass = pass
+      this.drawRounds(ctx, L, vis, on, time, hi, opts)
     }
-    if (hi) for (const tr of on) for (const pp of tr.players) if (pp.p.steamId === hi) this.drawPlayer(ctx, L, pp, time, trail, fadeOf(tr.track, time), true, true)
-    if (vis.length === 1 && on.length && !L.byPlayer) this.drawNames(ctx, L, vis[0], time, hi)
+    this.pass = 'own'
+    this.cur = null
+    if (vis.length === 1 && on.length && !L.grid) this.drawNames(ctx, L, vis[0], time, hi)
     ctx.restore()
     if (!vis.length) this.drawEmpty(ctx, L)
     this.drawClock(ctx, L, time)
+  }
+
+  private drawRounds(ctx: CanvasRenderingContext2D, L: Layout, vis: PTrack[], on: PTrack[], time: number, hi: string | null, opts: OverlayOptions) {
+    for (const tr of on) {
+      this.cur = tr
+      this.drawAreas(ctx, L, tr, time, hi)
+    }
+    for (const tr of on) {
+      this.cur = tr
+      this.drawPops(ctx, L, tr, time, hi)
+    }
+    for (const tr of on) {
+      this.cur = tr
+      this.drawMarks(ctx, L, tr, time, hi)
+    }
+    const trail = Math.min(this.busy ? BUSY_TRAIL : Infinity, Math.max(0, opts.trail ?? TRAIL))
+    // View cones only when they stay readable: one round on a map, or the
+    // highlighted player.
+    const cones = vis.length === 1 || L.grid === 'rounds'
+    // With several rounds on a map every dot carries its round's number.
+    const numbered = vis.length > 1 && L.grid !== 'rounds'
+    for (const tr of on) {
+      this.cur = tr
+      const f = fadeOf(tr.track, time)
+      const num = numbered ? tr.index + 1 : 0
+      for (const pp of tr.players) if (!hi || pp.p.steamId !== hi) this.drawPlayer(ctx, L, pp, time, trail, (hi ? FADED : 1) * f, false, cones && !hi, num)
+    }
+    if (hi) {
+      for (const tr of on) {
+        this.cur = tr
+        const num = numbered ? tr.index + 1 : 0
+        for (const pp of tr.players) if (pp.p.steamId === hi) this.drawPlayer(ctx, L, pp, time, trail, fadeOf(tr.track, time), true, true, num)
+      }
+    }
   }
 
   // ---- Static layer ----
 
   private background(w: number, h: number, opts: OverlayOptions, vis: PTrack[]): { canvas: HTMLCanvasElement; layout: Layout } {
     const floors = floorsFor(this.heights, opts.floors ?? 'auto')
-    const byPlayer = opts.layout === 'players' && this.legend.length > 1
-    const key = [w, h, floors.join(','), opts.highlight ?? '', this.span, byPlayer, vis.map((v) => this.tracks.indexOf(v)).join(',')].join('|')
+    const grid = opts.layout === 'players' && this.legend.length > 1 ? 'players' : opts.layout === 'rounds' && vis.length > 1 ? 'rounds' : ''
+    const key = [w, h, floors.join(','), opts.highlight ?? '', this.span, grid, vis.map((v) => v.index).join(',')].join('|')
     if (this.bg && this.bg.key === key) return this.bg
-    const layout = byPlayer ? this.playersLayout(w, h, floors[0]) : this.layoutFor(w, h, floors)
+    const cells: Cell[] =
+      grid === 'players' ? [...this.legend.map((player) => ({ player })), { all: true }] : grid === 'rounds' ? vis.map((v) => ({ round: v.index })) : []
+    const layout = grid ? this.gridLayout(w, h, floors[0], grid, cells) : this.layoutFor(w, h, floors)
     const canvas = this.bg && this.bg.canvas.width === w && this.bg.canvas.height === h ? this.bg.canvas : canvasOf(w, h)
     const ctx = canvas.getContext('2d')!
     ctx.setTransform(1, 0, 0, 1, 0, 0)
@@ -517,7 +571,7 @@ export class Overlay {
       const b = boxes[i]
       return { level, v, box: { x: v.ox + b[0] * v.k, y: v.oy + b[1] * v.k, w: (b[2] - b[0]) * v.k, h: (b[3] - b[1]) * v.k } }
     })
-    return { w, h, u, wide, byPlayer: false, panels, map, ...this.clockAt(h, u, wide) }
+    return { w, h, u, wide, grid: '', panels, map, ...this.clockAt(h, u, wide) }
   }
 
   private frame(w: number, h: number): { u: number; wide: boolean; map: Rect } {
@@ -535,15 +589,14 @@ export class Overlay {
     return { clock, bar }
   }
 
-  // playersLayout gives every player their own map of one floor, in a
-  // grid with the most room for each.
-  private playersLayout(w: number, h: number, level: number): Layout {
+  // gridLayout gives every player or every round its own map of one
+  // floor, in a grid with the most room for each.
+  private gridLayout(w: number, h: number, level: number, grid: 'players' | 'rounds', cells: Cell[]): Layout {
     const { u, wide, map } = this.frame(w, h)
     const pad = 12
     const f = this.stage.floors.length > 1 ? this.stage.floors[level] : null
     const b: Box = f ? [f.box[0] - pad, f.box[1] - pad, f.box[2] + pad, f.box[3] + pad] : this.stage.box
-    const players = this.legend
-    const n = players.length
+    const n = cells.length
     const gap = 18 * u
     const top = PANEL_LABEL * u
     const bw = b[2] - b[0]
@@ -560,7 +613,7 @@ export class Overlay {
     const ch = bh * k + top
     const x0 = map.x + (map.w - (cols * cw + gap * (cols - 1))) / 2
     const y0 = map.y + (map.h - (rows * ch + gap * (rows - 1))) / 2
-    const panels: Panel[] = players.map((player, i) => {
+    const panels: Panel[] = cells.map((cell, i) => {
       const r = Math.floor(i / cols)
       // The last row is centred when it is not full.
       const inRow = r === rows - 1 ? n - r * cols : cols
@@ -569,9 +622,9 @@ export class Overlay {
       const x = rx + c * (cw + gap)
       const y = y0 + r * (ch + gap) + top
       const v: View = { k, ox: x - b[0] * k, oy: y - b[1] * k }
-      return { level, v, box: { x, y, w: cw, h: bh * k }, player }
+      return { level, v, box: { x, y, w: cw, h: bh * k }, ...cell }
     })
-    return { w, h, u, wide, byPlayer: true, panels, map, ...this.clockAt(h, u, wide) }
+    return { w, h, u, wide, grid, panels, map, ...this.clockAt(h, u, wide) }
   }
 
   private paintStatic(ctx: CanvasRenderingContext2D, L: Layout, opts: OverlayOptions, vis: PTrack[]) {
@@ -589,9 +642,9 @@ export class Overlay {
     ctx.fillStyle = glow
     ctx.fillRect(0, 0, w, h)
     const first = L.panels[0]
-    if (!L.byPlayer) gridLines(ctx, info, first.v, { x: L.map.x - 24 * u, y: L.map.y - 24 * u, w: L.map.w + 48 * u, h: L.map.h + 48 * u }, u, L.wide ? 'xy' : 'y')
+    if (!L.grid) gridLines(ctx, info, first.v, { x: L.map.x - 24 * u, y: L.map.y - 24 * u, w: L.map.w + 48 * u, h: L.map.h + 48 * u }, u, L.wide ? 'xy' : 'y')
     // Side by side floors. Player maps each show the whole radar.
-    const split = L.panels.length > 1 && !L.byPlayer
+    const split = L.panels.length > 1 && !L.grid
     const lu = u * (L.wide ? 0.92 : 1)
     for (const p of L.panels) {
       const floor = st.floors[p.level] ?? st.floors[0] ?? null
@@ -617,7 +670,16 @@ export class Overlay {
         ctx.drawImage(sc.canvas, 0, 0)
         ctx.restore()
       } else if (floor) drawFloor(ctx, floor, p.v, u)
-      drawLabels(ctx, st, p.level, p.v, L.byPlayer ? lu * Math.min(1, Math.max(0.7, p.v.k * 1.4)) : lu, [], [], L.byPlayer || vis.length > 3)
+      drawLabels(ctx, st, p.level, p.v, L.grid ? lu * Math.min(1, Math.max(0.7, p.v.k * 1.4)) : lu, [], [], !!L.grid || vis.length > 3)
+      if (p.round !== undefined) this.roundTitle(ctx, p, u)
+      else if (p.all) {
+        font(ctx, 700, 19, u, 0.01)
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'alphabetic'
+        ctx.fillStyle = TEXT_2
+        ctx.fillText('All players', p.box.x, p.box.y - 9 * u)
+        setSpacing(ctx, '0px')
+      }
       if (p.player) {
         // The player's name over their map, in their colour.
         const x = p.box.x
@@ -771,7 +833,7 @@ export class Overlay {
     y = Math.max(y + 10 * u, 930 * u)
     if (y < h - 80 * u) {
       label(ctx, vis.length === this.tracks.length ? 'Rounds' : 'Rounds shown', x0, y, u)
-      chips(ctx, vis.map((v) => v.track), x0, y + 16 * u, colW, h - 40 * u, u)
+      chips(ctx, vis, x0, y + 16 * u, colW, h - 40 * u, u)
     }
   }
 
@@ -905,8 +967,14 @@ export class Overlay {
   // at is the map a thing on this floor goes on, with how strongly to
   // draw it. On player maps, things go on the map of the player id.
   private at(L: Layout, level: number, id = ''): { p: Panel; a: number } | null {
-    if (L.byPlayer) {
-      const p = L.panels.find((q) => q.player?.id === id)
+    if (L.grid) {
+      const cur = this.cur
+      const p =
+        L.grid === 'rounds'
+          ? L.panels.find((q) => q.round === cur?.index)
+          : this.pass === 'all'
+            ? L.panels.find((q) => q.all)
+            : L.panels.find((q) => q.player?.id === id)
       return p ? { p, a: level === p.level ? 1 : OFF_FLOOR } : null
     }
     if (L.panels.length === 1) return { p: L.panels[0], a: level === L.panels[0].level ? 1 : OFF_FLOOR }
@@ -1056,7 +1124,10 @@ export class Overlay {
       const e = ev.e
       if (t < e.t) continue
       // The bomb matters to everyone, so it goes on every player's map.
-      const spots = L.byPlayer ? L.panels.map((p) => ({ p, a: p.level === ev.level ? 1 : OFF_FLOOR })) : [this.at(L, ev.level, ev.id)]
+      const spots =
+        L.grid === 'players' && this.pass === 'own'
+          ? L.panels.filter((p) => !p.all).map((p) => ({ p, a: p.level === ev.level ? 1 : OFF_FLOOR }))
+          : [this.at(L, ev.level, ev.id)]
       for (const where of spots) {
         if (!where) continue
         const { p } = where
@@ -1071,7 +1142,7 @@ export class Overlay {
           ctx.stroke()
         }
         ctx.globalAlpha = where.a
-        c4Mark(ctx, x, y, (L.byPlayer ? 8 : 11) * u, u)
+        c4Mark(ctx, x, y, (L.grid ? 8 : 11) * u, u)
       }
     }
     // Enemies they killed, as a skull in the killer's colour.
@@ -1122,7 +1193,8 @@ export class Overlay {
     this.trailA = new Float64Array(n)
   }
 
-  private drawPlayer(ctx: CanvasRenderingContext2D, L: Layout, pp: PPlayer, t: number, trail: number, alpha: number, focus: boolean, cone: boolean) {
+  // num is the round's number to write in the dot, 0 for none.
+  private drawPlayer(ctx: CanvasRenderingContext2D, L: Layout, pp: PPlayer, t: number, trail: number, alpha: number, focus: boolean, cone: boolean, num = 0) {
     const { u } = L
     const p = pp.p
     const step = this.step
@@ -1205,7 +1277,8 @@ export class Overlay {
     if (!alive) {
       drawShape(ctx, 'x', x, y, p.color, u * (focus ? 0.95 : 0.78))
     } else {
-      const r = (focus ? 8 : 6.5) * u
+      // A dot with a number is a bit bigger, so the digits fit.
+      const r = (num ? (focus ? 10 : 9) : focus ? 8 : 6.5) * u
       // Radar y runs down, so the angle flips.
       const a = (-pt[4] * Math.PI) / 180
       const ca = Math.cos(a)
@@ -1251,8 +1324,43 @@ export class Overlay {
         circle(ctx, x, y, r + 3.4 * u)
         ctx.stroke()
       }
+      if (num) {
+        font(ctx, 700, num >= 10 ? 10 : 12, u)
+        ctx.fillStyle = BG
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(`${num}`, x, y + 0.75 * u)
+        ctx.textBaseline = 'alphabetic'
+      }
     }
     ctx.globalAlpha = 1
+  }
+
+  // roundTitle names a round's map: its number, the round, won or lost
+  // and the site they went for.
+  private roundTitle(ctx: CanvasRenderingContext2D, p: Panel, u: number) {
+    const tr = this.situation.tracks[p.round ?? -1]
+    if (!tr) return
+    const y = p.box.y - 10 * u
+    let x = p.box.x
+    x += numBadge(ctx, (p.round ?? 0) + 1, tr.won, x, y - 7 * u, u) + 8 * u
+    font(ctx, 700, 17, u, 0.01)
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'alphabetic'
+    ctx.fillStyle = TEXT
+    const name = fitText(ctx, shortLabel(tr.label), p.box.w * 0.5)
+    ctx.fillText(name, x, y)
+    x += ctx.measureText(name).width + 10 * u
+    font(ctx, 600, 15, u, 0.02)
+    const hit = tr.hit && tr.hitTime >= 0 ? ` · ${tr.hit} at ${clockText(tr.hitTime)}` : ''
+    ctx.fillStyle = tr.won ? GOOD : BAD
+    const res = tr.won ? 'Won' : 'Lost'
+    ctx.fillText(res, x, y)
+    if (hit) {
+      ctx.fillStyle = TEXT_3
+      ctx.fillText(fitText(ctx, hit, p.box.x + p.box.w - x - ctx.measureText(res).width), x + ctx.measureText(res).width, y)
+    }
+    setSpacing(ctx, '0px')
   }
 
   // drawNames puts the names next to the dots when a single round is on
@@ -1341,7 +1449,7 @@ function fixedDigits(ctx: CanvasRenderingContext2D, text: string, x: number, y: 
 }
 
 // prepTrack works out the floor of every sample and event once.
-function prepTrack(tr: SituationTrack, info: MapInfo, step: number): PTrack {
+function prepTrack(tr: SituationTrack, index: number, info: MapInfo, step: number): PTrack {
   const byName = new Map<string, TrackPlayer>()
   for (const p of tr.players) byName.set(p.name, p)
   const players = tr.players.map((p) => {
@@ -1350,7 +1458,7 @@ function prepTrack(tr: SituationTrack, info: MapInfo, step: number): PTrack {
     const dead = p.alive.indexOf(0)
     return { p, levels, died: dead < 0 ? Infinity : dead * step }
   })
-  const out: PTrack = { track: tr, players, areas: [], pops: [], kills: [], deaths: [], plants: [] }
+  const out: PTrack = { index, track: tr, players, areas: [], pops: [], kills: [], deaths: [], plants: [] }
   for (const e of tr.events) {
     const who = byName.get(e.player)
     const ev: Ev = { e, level: levelOf(info, e.z), color: who?.color ?? TEXT_2, id: who?.steamId ?? '' }
@@ -1453,22 +1561,44 @@ export function wrap(ctx: CanvasRenderingContext2D, text: string, maxW: number, 
   return lines
 }
 
-// chips lists the rounds on screen: won or lost, and the site they went
-// for.
-function chips(ctx: CanvasRenderingContext2D, list: SituationTrack[], x: number, y: number, maxW: number, bottom: number, u: number) {
+// numBadge draws a round's number on green when it was won, red when
+// lost, with its middle left at (x, y). Returns its width.
+function numBadge(ctx: CanvasRenderingContext2D, n: number, won: boolean, x: number, y: number, u: number): number {
+  const text = `${n}`
+  font(ctx, 700, 13, u)
+  const w = Math.max(20 * u, ctx.measureText(text).width + 10 * u)
+  const h = 20 * u
+  ctx.fillStyle = won ? GOOD : BAD
+  roundRect(ctx, x, y - h / 2, w, h, 4 * u)
+  ctx.fill()
+  ctx.fillStyle = BG
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(text, x + w / 2, y + 0.75 * u)
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
+  return w
+}
+
+// chips lists the rounds on screen with the number their dots carry, won
+// or lost, and the site they went for.
+function chips(ctx: CanvasRenderingContext2D, list: PTrack[], x: number, y: number, maxW: number, bottom: number, u: number) {
   const h = 30 * u
   const gap = 8 * u
   let cx = x
   let cy = y
   font(ctx, 600, 15, u, 0.04)
   for (let i = 0; i < list.length; i++) {
-    const tr = list[i]
+    const tr = list[i].track
+    const n = list[i].index + 1
     const text = shortLabel(tr.label)
     const site = tr.hit === 'A' || tr.hit === 'B' ? tr.hit : ''
+    font(ctx, 700, 13, u)
+    const nw = Math.max(20 * u, ctx.measureText(`${n}`).width + 10 * u)
     font(ctx, 600, 15, u, 0.04)
     const tw = ctx.measureText(text).width
     const sw = site ? 24 * u : 0
-    const w = 22 * u + tw + sw + 12 * u
+    const w = 5 * u + nw + 8 * u + tw + sw + 12 * u
     if (cx + w > x + maxW) {
       cx = x
       cy += h + gap
@@ -1489,17 +1619,16 @@ function chips(ctx: CanvasRenderingContext2D, list: SituationTrack[], x: number,
     ctx.strokeStyle = LINE_2
     roundRect(ctx, cx + 0.5 * u, cy + 0.5 * u, w - u, h - u, 3.5 * u)
     ctx.stroke()
-    ctx.fillStyle = tr.won ? GOOD : BAD
-    circle(ctx, cx + 12 * u, cy + h / 2, 3.5 * u)
-    ctx.fill()
+    numBadge(ctx, n, tr.won, cx + 5 * u, cy + h / 2, u)
+    const tx = cx + 5 * u + nw + 8 * u
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
     font(ctx, 600, 15, u, 0.04)
     ctx.fillStyle = TEXT
-    ctx.fillText(text, cx + 22 * u, cy + h / 2 + 1 * u)
+    ctx.fillText(text, tx, cy + h / 2 + 1 * u)
     if (site) {
       // The site the T side went for, in the side's colour.
-      const sx = cx + 22 * u + tw + 8 * u + 8 * u
+      const sx = tx + tw + 8 * u + 8 * u
       if (!drawIcon(ctx, `hud/bombsite-${site.toLowerCase()}`, sx, cy + h / 2, 16 * u, teamColor(2).light)) {
         font(ctx, 700, 14, u)
         ctx.fillStyle = teamColor(2).light

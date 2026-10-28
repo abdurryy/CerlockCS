@@ -2,10 +2,10 @@
   import { exportFolder, openExport, saveExport } from '../lib/api'
   import { mapLabel } from '../lib/format'
   import { scoutOptions } from '../lib/scout/aggregate'
-  import { clockText, lengthOf, Overlay } from '../lib/scout/overlay'
+  import { clockText, lengthOf, Overlay, type OverlayLayout } from '../lib/scout/overlay'
   import type { MapScout, Situation } from '../lib/scout/types'
   import { Cancelled, targetBitrate } from '../lib/scout/video'
-  import { FPS, layoutOf, lengthSeconds, MAX_VIDEO_BYTES, renderVideo, sizeOf, teamFolder, VIDEO_LAYOUTS, VIDEO_LENGTHS, VIDEO_SIZES, videoPath, type LayoutChoice } from '../lib/scout/videos'
+  import { FPS, layoutOf, lengthSeconds, MAX_VIDEO_BYTES, pages, renderVideo, sizeOf, teamFolder, VIDEO_LAYOUTS, VIDEO_LENGTHS, VIDEO_SIZES, videoPath, type LayoutChoice } from '../lib/scout/videos'
   import Icon from './Icon.svelte'
   import ScoutIcon from './ScoutIcon.svelte'
 
@@ -18,6 +18,11 @@
     key: string
     scout: MapScout
     s: Situation
+    layout: OverlayLayout
+    // The rounds in this video, null for all of them. A map per round with
+    // many rounds is split over several videos, part says which rounds.
+    rounds: number[] | null
+    part?: { from: number; to: number }
     // Seconds of video.
     secs: number
   }
@@ -49,9 +54,28 @@
       const cut = lengthSeconds(length)
       return m.situations
         .filter((s) => s.tracks.length)
-        .map((s) => {
-          const full = lengthOf(s.tracks, max)
-          return { key: `${m.map}/${s.key}`, scout: m, s, secs: cut > 0 ? Math.min(cut, full) : full }
+        .flatMap((s) => {
+          const lay = layoutOf(layout, s.tracks.length)
+          const parts = pages(
+            s.tracks.map((_, i) => i),
+            lay,
+          )
+          return parts.map((pg, n) => {
+            const full = lengthOf(
+              pg.map((i) => s.tracks[i]),
+              max,
+            )
+            const split = parts.length > 1
+            return {
+              key: `${m.map}/${s.key}/${n}`,
+              scout: m,
+              s,
+              layout: lay,
+              rounds: split ? pg : null,
+              part: split ? { from: pg[0] + 1, to: pg[pg.length - 1] + 1 } : undefined,
+              secs: cut > 0 ? Math.min(cut, full) : full,
+            }
+          })
         })
     }),
   )
@@ -100,7 +124,6 @@
     const list = chosen.slice()
     const sz = sizeOf(size)
     const cut = lengthSeconds(length)
-    const pick = layout
     running = true
     finished = false
     error = ''
@@ -120,7 +143,7 @@
         const o = await Overlay.create(it.scout, it.s, { teamName })
         const v = await renderVideo(
           o,
-          { layout: layoutOf(pick, it.s.tracks.length) },
+          { layout: it.layout, rounds: it.rounds },
           sz,
           cut,
           (p) => {
@@ -132,7 +155,7 @@
           },
           signal,
         )
-        const path = videoPath(teamName, it.scout.map, it.s, v.ext)
+        const path = videoPath(teamName, it.scout.map, it.s, v.ext, it.part)
         await saveExport(path, v.blob)
         done = { ...done, [it.key]: { stage: 'saved', path } }
       } catch (e) {
@@ -277,11 +300,12 @@
               <ul>
                 {#each list as it (it.key)}
                   {@const d = done[it.key]}
+                  {@const n = it.rounds?.length ?? it.s.tracks.length}
                   <li class={d?.stage ?? ''}>
                     <span class="tag {it.s.side}">{it.s.side.toUpperCase()}</span>
-                    <span class="nm">{buyName(it.s)}</span>
-                    <span class="faint num">{it.s.tracks.length} {it.s.tracks.length === 1 ? 'round' : 'rounds'}, {clockText(it.secs)}</span>
-                    <span class="file faint" title={d?.path ?? videoPath(teamName, m.map, it.s, 'mp4')}>{d?.path ?? videoPath(teamName, m.map, it.s, 'mp4')}</span>
+                    <span class="nm">{buyName(it.s)}{it.part ? `, ${it.part.from}-${it.part.to}` : ''}</span>
+                    <span class="faint num">{n} {n === 1 ? 'round' : 'rounds'}, {clockText(it.secs)}</span>
+                    <span class="file faint" title={d?.path ?? videoPath(teamName, m.map, it.s, 'mp4', it.part)}>{d?.path ?? videoPath(teamName, m.map, it.s, 'mp4', it.part)}</span>
                     <span class="st">
                       {#if d?.stage === 'making'}<i class="spin"></i>{:else if d?.stage === 'saved'}<Icon name="check" size={14} />{/if}
                       <span>{stageText(d, it.key)}</span>

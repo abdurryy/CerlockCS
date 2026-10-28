@@ -1,5 +1,5 @@
 import { mapLabel } from '../format'
-import type { Overlay, OverlayLayout, OverlayOptions } from './overlay'
+import { MAX_ROUND_MAPS, type Overlay, type OverlayLayout, type OverlayOptions } from './overlay'
 import { slug } from './slug'
 import type { BuyKind, Situation } from './types'
 import { encodeVideo, type Video } from './video'
@@ -29,22 +29,30 @@ export const VIDEO_LENGTHS = [
 
 export const FPS = 30
 
-// From this many rounds everyone on one map is too much to read, and each
-// player gets their own map.
-export const SPLIT_ROUNDS = 4
-
 export type LayoutChoice = 'auto' | OverlayLayout
 
 export const VIDEO_LAYOUTS: { id: LayoutChoice; label: string; title: string }[] = [
-  { id: 'auto', label: 'Auto', title: `One map up to ${SPLIT_ROUNDS - 1} rounds, a map per player from ${SPLIT_ROUNDS}` },
-  { id: 'together', label: 'One map', title: 'Everyone on one map' },
-  { id: 'players', label: 'Map per player', title: 'Each player on a map of their own' },
+  { id: 'auto', label: 'Auto', title: `A map per round up to ${MAX_ROUND_MAPS} rounds, a map per player with more` },
+  { id: 'rounds', label: 'Map per round', title: 'Every round on a map of its own, all playing at once' },
+  { id: 'players', label: 'Map per player', title: 'Each player on a map of their own, plus one with everyone' },
+  { id: 'together', label: 'One map', title: 'Everyone on one map, the dots carry the round number' },
 ]
 
-// layoutOf picks the layout for a video of this many rounds.
+// layoutOf picks the layout for a video of this many rounds: a round on
+// its own needs one map, up to MAX_ROUND_MAPS rounds read best side by
+// side, more than that by player.
 export function layoutOf(choice: LayoutChoice, rounds: number): OverlayLayout {
   if (choice !== 'auto') return choice
-  return rounds >= SPLIT_ROUNDS ? 'players' : 'together'
+  if (rounds <= 1) return 'together'
+  return rounds <= MAX_ROUND_MAPS ? 'rounds' : 'players'
+}
+
+// pages splits rounds into groups that fit a map per round.
+export function pages(rounds: number[], layout: OverlayLayout): number[][] {
+  if (layout !== 'rounds' || rounds.length <= MAX_ROUND_MAPS) return [rounds]
+  const out: number[][] = []
+  for (let i = 0; i < rounds.length; i += MAX_ROUND_MAPS) out.push(rounds.slice(i, i + MAX_ROUND_MAPS))
+  return out
 }
 
 // Every video stays under 20 MB, long ones get a lower bitrate.
@@ -71,10 +79,12 @@ export function teamFolder(teamName: string): string {
 }
 
 // videoPath is where a situation video goes, like
-// "e-maniacs/mirage/ct/eco-rounds.mp4".
-export function videoPath(teamName: string, map: string, s: Pick<Situation, 'side' | 'buy'>, ext: string): string {
+// "e-maniacs/mirage/ct/eco-rounds.mp4". A part of a situation split over
+// several videos gets its round numbers, like "full-buys-rounds-10-18".
+export function videoPath(teamName: string, map: string, s: Pick<Situation, 'side' | 'buy'>, ext: string, part?: { from: number; to: number }): string {
   const m = slug(mapLabel(map)) || slug(map) || 'map'
-  return `${teamFolder(teamName)}/${m}/${s.side}/${BUY_FILE[s.buy]}.${ext}`
+  const tail = part ? `-rounds-${part.from}-${part.to}` : ''
+  return `${teamFolder(teamName)}/${m}/${s.side}/${BUY_FILE[s.buy]}${tail}.${ext}`
 }
 
 // videoLength is how long the video of these rounds is, in seconds.
